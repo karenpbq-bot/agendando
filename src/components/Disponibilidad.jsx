@@ -1,94 +1,152 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
+
+const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 export default function Disponibilidad({ usuarioId }) {
-  const [diaSemana, setDiaSemana] = useState('Lunes');
-  const [horaInicio, setHoraInicio] = useState('09:00');
-  const [horaFin, setHoraFin] = useState('13:00');
-  const [tipoProyeccion, setTipoProyeccion] = useState('semanal');
-  const [excepcionFecha, setExcepcionFecha] = useState('');
+  const [restricciones, setRestricciones] = useState({});
+  const [cargando, setCargando] = useState(true);
   const [mensaje, setMensaje] = useState('');
 
-  const guardarDisponibilidad = (e) => {
-    e.preventDefault();
-    // Aquí conectaremos posteriormente con la tabla de Supabase para guardar la disponibilidad
-    setMensaje('¡Disponibilidad guardada y proyectada correctamente!');
-    setTimeout(() => setMensaje(''), 4000);
+  useEffect(() => {
+    if (usuarioId) {
+      cargarRestricciones();
+    }
+  }, [usuarioId]);
+
+  const cargarRestricciones = async () => {
+    setCargando(true);
+    const { data, error } = await supabase
+      .from('agd_restricciones_disponibilidad')
+      .select('*')
+      .eq('usuario_id', usuarioId);
+
+    if (!error && data) {
+      const mapa = {};
+      DIAS_SEMANA.forEach(dia => {
+        const existente = data.find(r => r.dia_semana === dia);
+        mapa[dia] = existente || {
+          dia_semana: dia,
+          bloqueado_todo_el_dia: dia === 'Sábado' || dia === 'Domingo',
+          tramo_1_inicio: '', tramo_1_fin: '',
+          tramo_2_inicio: '', tramo_2_fin: '',
+          tramo_3_inicio: '', tramo_3_fin: '',
+          tramo_4_inicio: '', tramo_4_fin: ''
+        };
+      });
+      setRestricciones(mapa);
+    }
+    setCargando(false);
   };
+
+  const manejarCambioDia = (dia, campo, valor) => {
+    setRestricciones(prev => ({
+      ...prev,
+      [dia]: {
+        ...prev[dia],
+        [campo]: valor
+      }
+    }));
+  };
+
+  const guardarConfiguracion = async (e) => {
+    e.preventDefault();
+    setCargando(true);
+    setMensaje('');
+
+    try {
+      await supabase.from('agd_restricciones_disponibilidad').delete().eq('usuario_id', usuarioId);
+
+      const payload = DIAS_SEMANA.map(dia => ({
+        usuario_id: usuarioId,
+        dia_semana: dia,
+        bloqueado_todo_el_dia: restricciones[dia].bloqueado_todo_el_dia,
+        tramo_1_inicio: restricciones[dia].tramo_1_inicio || null,
+        tramo_1_fin: restricciones[dia].tramo_1_fin || null,
+        tramo_2_inicio: restricciones[dia].tramo_2_inicio || null,
+        tramo_2_fin: restricciones[dia].tramo_2_fin || null,
+        tramo_3_inicio: restricciones[dia].tramo_3_inicio || null,
+        tramo_3_fin: restricciones[dia].tramo_3_fin || null,
+        tramo_4_inicio: restricciones[dia].tramo_4_inicio || null,
+        tramo_4_fin: restricciones[dia].tramo_4_fin || null,
+      }));
+
+      const { error } = await supabase.from('agd_restricciones_disponibilidad').insert(payload);
+
+      if (error) {
+        setMensaje('Error al guardar: ' + error.message);
+      } else {
+        setMensaje('¡Configuración de disponibilidad guardada con éxito!');
+        setTimeout(() => setMensaje(''), 4000);
+      }
+    } catch (err) {
+      setMensaje('Error de conexión con la base de datos.');
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  if (cargando && Object.keys(restricciones).length === 0) {
+    return <p style={{ padding: '20px', textAlign: 'center' }}>Cargando disponibilidad...</p>;
+  }
 
   return (
     <div style={estilos.contenedor}>
-      <h3 style={estilos.titulo}>Configuración de Horarios de Atención</h3>
-      <p style={estilos.descripcion}>
-        Define tus bloques disponibles. Estos horarios se reflejarán automáticamente en el calendario con un fondo amarillo translúcido.
+      <h2 style={estilos.titulo}>Disponibilidad y Horarios</h2>
+      <p style={estilos.subtitulo}>
+        Indica los tramos horarios en los que <b>no estarás disponible</b> o bloquea el día completo.
       </p>
 
-      <form onSubmit={guardarDisponibilidad} style={estilos.formulario}>
-        <div style={estilos.fila}>
-          <div style={estilos.grupo}>
-            <label style={estilos.etiqueta}>Día de la Semana</label>
-            <select 
-              value={diaSemana} 
-              onChange={(e) => setDiaSemana(e.target.value)}
-              style={estilos.input}
-            >
-              {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
+      <form onSubmit={guardarConfiguracion}>
+        {DIAS_SEMANA.map(dia => {
+          const item = restricciones[dia] || {};
+          return (
+            <div key={dia} style={estilos.tarjetaDia}>
+              <div style={estilos.cabeceraDia}>
+                <h3 style={estilos.nombreDia}>{dia}</h3>
+                <label style={estilos.labelCheckbox}>
+                  <input 
+                    type="checkbox"
+                    checked={item.bloqueado_todo_el_dia || false}
+                    onChange={(e) => manejarCambioDia(dia, 'bloqueado_todo_el_dia', e.target.checked)}
+                    style={estilos.checkbox}
+                  />
+                  Bloquear día
+                </label>
+              </div>
 
-          <div style={estilos.grupo}>
-            <label style={estilos.etiqueta}>Tipo de Proyección</label>
-            <select 
-              value={tipoProyeccion} 
-              onChange={(e) => setTipoProyeccion(e.target.value)}
-              style={estilos.input}
-            >
-              <option value="semanal">Repetir Semanalmente</option>
-              <option value="mensual">Repetir Mensualmente</option>
-            </select>
-          </div>
-        </div>
+              {!item.bloqueado_todo_el_dia && (
+                <div style={estilos.tramosContainer}>
+                  {[1, 2, 3, 4].map(num => (
+                    <div key={num} style={estilos.tramoRow}>
+                      <span style={estilos.tramoLabel}>Tramo {num}</span>
+                      <div style={estilos.inputsTimeWrapper}>
+                        <input 
+                          type="time" 
+                          value={item[`tramo_${num}_inicio`] || ''}
+                          onChange={(e) => manejarCambioDia(dia, `tramo_${num}_inicio`, e.target.value)}
+                          style={estilos.inputTime}
+                        />
+                        <span style={estilos.separadorHora}>a</span>
+                        <input 
+                          type="time" 
+                          value={item[`tramo_${num}_fin`] || ''}
+                          onChange={(e) => manejarCambioDia(dia, `tramo_${num}_fin`, e.target.value)}
+                          style={estilos.inputTime}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
-        <div style={estilos.fila}>
-          <div style={estilos.grupo}>
-            <label style={estilos.etiqueta}>Hora de Inicio</label>
-            <input 
-              type="time" 
-              value={horaInicio} 
-              onChange={(e) => setHoraInicio(e.target.value)}
-              style={estilos.input}
-              required 
-            />
-          </div>
+        {mensaje && <p style={estilos.mensaje}>{mensaje}</p>}
 
-          <div style={estilos.grupo}>
-            <label style={estilos.etiqueta}>Hora de Fin</label>
-            <input 
-              type="time" 
-              value={horaFin} 
-              onChange={(e) => setHoraFin(e.target.value)}
-              style={estilos.input}
-              required 
-            />
-          </div>
-        </div>
-
-        <div style={estilos.grupoExcepcion}>
-          <label style={estilos.etiqueta}>Bloqueo o Excepción Puntual (Opcional)</label>
-          <input 
-            type="date" 
-            value={excepcionFecha} 
-            onChange={(e) => setExcepcionFecha(e.target.value)}
-            style={estilos.input}
-          />
-          <span style={estilos.ayuda}>Selecciona una fecha específica si deseas bloquear la atención en este rango.</span>
-        </div>
-
-        {mensaje && <p style={estilos.alerta}>{mensaje}</p>}
-
-        <button type="submit" style={estilos.boton}>
-          Guardar y Proyectar Horario
+        <button type="submit" disabled={cargando} style={estilos.botonGuardar}>
+          {cargando ? 'Guardando...' : 'Guardar Configuración'}
         </button>
       </form>
     </div>
@@ -96,16 +154,20 @@ export default function Disponibilidad({ usuarioId }) {
 }
 
 const estilos = {
-  contenedor: { padding: '10px', fontFamily: 'sans-serif' },
-  titulo: { fontSize: '1.1rem', color: '#333333', marginBottom: '8px' },
-  descripcion: { fontSize: '0.85rem', color: '#666666', marginBottom: '20px' },
-  formulario: { display: 'flex', flexDirection: 'column', gap: '15px' },
-  fila: { display: 'flex', gap: '15px', flexWrap: 'wrap' },
-  grupo: { flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column' },
-  grupoExcepcion: { display: 'flex', flexDirection: 'column' },
-  etiqueta: { fontSize: '0.85rem', fontWeight: '500', color: '#444444', marginBottom: '6px' },
-  input: { padding: '10px', borderRadius: '6px', border: '1px solid #CCCCCC', fontSize: '0.95rem', backgroundColor: '#FFFFFF', outline: 'none' },
-  ayuda: { fontSize: '0.75rem', color: '#888888', marginTop: '4px' },
-  alerta: { fontSize: '0.9rem', color: '#00A89F', fontWeight: 'bold', margin: 0 },
-  boton: { padding: '12px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '0.95rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '5px' }
+  contenedor: { padding: '15px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
+  titulo: { fontSize: '1.3rem', color: '#333333', marginBottom: '5px', textAlign: 'center' },
+  subtitulo: { fontSize: '0.85rem', color: '#666666', marginBottom: '20px', textAlign: 'center', lineHeight: '1.4' },
+  tarjetaDia: { backgroundColor: '#FFFFFF', padding: '14px', borderRadius: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)', marginBottom: '12px', border: '1px solid #EAEAEA' },
+  cabeceraDia: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #F0F0F0', paddingBottom: '8px' },
+  nombreDia: { fontSize: '1rem', color: '#00A89F', margin: '0', fontWeight: 'bold' },
+  labelCheckbox: { fontSize: '0.8rem', color: '#D9534F', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' },
+  checkbox: { width: '18px', height: '18px', cursor: 'pointer' },
+  tramosContainer: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  tramoRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#555555' },
+  tramoLabel: { fontWeight: '500', color: '#666', minWidth: '55px' },
+  inputsTimeWrapper: { display: 'flex', alignItems: 'center', gap: '6px' },
+  inputTime: { padding: '8px 6px', borderRadius: '6px', border: '1px solid #CCCCCC', fontSize: '0.85rem', backgroundColor: '#FAFAFA', width: '110px', textAlign: 'center' },
+  separadorHora: { color: '#888', fontSize: '0.8rem' },
+  mensaje: { fontSize: '0.85rem', color: '#00A89F', fontWeight: 'bold', textAlign: 'center', margin: '15px 0' },
+  botonGuardar: { width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0, 168, 159, 0.2)', marginTop: '10px' }
 };

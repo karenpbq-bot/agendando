@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import Registro from '../components/Registro'; // <-- AGREGA ESTA LÍNEA AQUÍ
+import Registro from '../components/Registro';
 
 export default function Login({ onLoginExitoso }) {
   const [usuario, setUsuario] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [recordarSesion, setRecordarSesion] = useState(false);
-  const [pantallaRegistro, setPantallaRegistro] = useState(false); // <-- AGREGA ESTA LÍNEA AQUÍ
+  const [pantallaRegistro, setPantallaRegistro] = useState(false);
   
   const [intentos, setIntentos] = useState(0);
   const [bloqueoHasta, setBloqueoHasta] = useState(null);
@@ -57,7 +57,6 @@ export default function Login({ onLoginExitoso }) {
           setMensaje(`Usuario o contraseña incorrecta. Te quedan ${5 - nuevosIntentos} intentos.`);
         }
       } else {
-        // Validamos si el usuario está activo (control financiero/administrativo)
         if (data.activo === false) {
           setMensaje('Tu cuenta se encuentra suspendida. Contacta al administrador.');
           setCargando(false);
@@ -65,12 +64,10 @@ export default function Login({ onLoginExitoso }) {
         }
 
         setIntentos(0);
-        
         if (recordarSesion) {
           localStorage.setItem('tamtara_usuario', usuario);
         }
 
-        // Enviamos el objeto completo del usuario (incluyendo su rol) al App.jsx
         onLoginExitoso(data);
       }
     } catch (err) {
@@ -86,6 +83,15 @@ export default function Login({ onLoginExitoso }) {
     return `${min}:${seg < 10 ? '0' : ''}${seg}`;
   };
 
+  if (pantallaRegistro) {
+    return (
+      <Registro 
+        onVolverLogin={() => setPantallaRegistro(false)} 
+        onRegistroExitoso={(datosUsuario) => onLoginExitoso(datosUsuario)}
+      />
+    );
+  }
+
   return (
     <div style={estilos.contenedor}>
       <div style={estilos.tarjeta}>
@@ -93,7 +99,6 @@ export default function Login({ onLoginExitoso }) {
         <h1 style={estilos.tituloLogo}>Agendando</h1>
         
         <form onSubmit={manejarIngreso} style={estilos.formulario}>
-          
           <div style={estilos.grupoInput}>
             <label style={estilos.etiqueta}>Usuario</label>
             <input 
@@ -143,6 +148,7 @@ export default function Login({ onLoginExitoso }) {
             {cargando ? 'Verificando...' : (bloqueoHasta ? 'Bloqueado' : 'Ingresar')}
           </button>
         </form>
+
         <div style={estilos.divisorRegistro}>
           <span style={estilos.textoO}>¿Nuevo en la plataforma?</span>
           <button 
@@ -152,6 +158,8 @@ export default function Login({ onLoginExitoso }) {
           >
             Registrarse ahora
           </button>
+        </div>
+
       </div>
     </div>
   );
@@ -171,8 +179,6 @@ const estilos = {
   etiquetaCheckbox: { fontSize: '0.85rem', color: '#666666', cursor: 'pointer' },
   boton: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' },
   mensaje: { fontSize: '0.9rem', margin: '0', fontWeight: '500' },
-  
-  // <-- AGREGA ESTAS TRES LÍNEAS AL FINAL DEL OBJETO ESTILOS
   divisorRegistro: { marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #EEEEEE', display: 'flex', flexDirection: 'column', gap: '8px' },
   textoO: { fontSize: '0.85rem', color: '#666666' },
   botonRegistro: { background: 'none', border: 'none', color: '#00A89F', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }

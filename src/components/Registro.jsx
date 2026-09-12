@@ -8,7 +8,11 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
-  const [codigoEmpresa, setCodigoEmpresa] = useState(''); // Campo para ingresar el código
+  const [codigoEmpresa, setCodigoEmpresa] = useState('');
+  
+  // Nuevos campos opcionales
+  const [rubro, setRubro] = useState('');
+  const [temasInteres, setTemasInteres] = useState('');
   
   const [rol, setRol] = useState('Empresario'); 
   const [plan, setPlan] = useState('prueba'); 
@@ -28,7 +32,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     setMensaje('');
 
     try {
-      // 1. Buscamos la empresa en Supabase utilizando el código ingresado
       const { data: empresaEncontrada, error: errorEmpresa } = await supabase
         .from('empresas')
         .select('id, nombre')
@@ -41,7 +44,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // 2. Verificamos si el nombre de usuario ya está ocupado
       const { data: usuarioExistente } = await supabase
         .from('usuarios')
         .select('nombre_usuario')
@@ -54,7 +56,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // 3. Registramos al usuario utilizando el ID numérico de la empresa encontrada
       const { data, error } = await supabase
         .from('usuarios')
         .insert([
@@ -64,9 +65,11 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             password_hash: password,
             dni: dni,
             telefono: telefono,
-            email: correo, // Nota: según tu tabla se llama email o correo, ajustamos ambos si es necesario
+            email: correo,
             correo: correo,
-            empresa_id: empresaEncontrada.id, // ¡Aquí va el número de ID de la empresa!
+            empresa_id: empresaEncontrada.id,
+            rubro: rubro || null,          // Opcional
+            temas_interes: temasInteres || null, // Opcional
             rol: rol,
             plan: plan,
             pago_al_dia: plan === 'prueba',
@@ -100,6 +103,18 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         <form onSubmit={manejarRegistro} style={estilos.formulario}>
           
           <div style={estilos.grupoInput}>
+            <label style={estilos.etiqueta}>Nombre Completo</label>
+            <input 
+              type="text" 
+              value={nombreCompleto}
+              onChange={(e) => setNombreCompleto(e.target.value)}
+              placeholder="Ej. Juan Pérez Gómez"
+              style={estilos.input}
+              required 
+            />
+          </div>
+
+          <div style={estilos.grupoInput}>
             <label style={estilos.etiqueta}>Código de Organización o Empresa</label>
             <input 
               type="text" 
@@ -118,6 +133,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
                 type="text" 
                 value={nombreUsuario}
                 onChange={(e) => setNombreUsuario(e.target.value)}
+                placeholder="Ej. jperez"
                 style={estilos.input}
                 required 
               />
@@ -166,6 +182,30 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
               style={estilos.input}
               required 
             />
+          </div>
+
+          {/* Campos Opcionales de Red de Contactos */}
+          <div style={estilos.fila}>
+            <div style={estilos.grupoInput}>
+              <label style={estilos.etiqueta}>Rubro o Sector <span style={estilos.opcional}>(Opcional)</span></label>
+              <input 
+                type="text" 
+                value={rubro}
+                onChange={(e) => setRubro(e.target.value)}
+                placeholder="Ej. Consultoría, Tecnología"
+                style={estilos.input}
+              />
+            </div>
+            <div style={estilos.grupoInput}>
+              <label style={estilos.etiqueta}>Temas de Interés <span style={estilos.opcional}>(Opcional)</span></label>
+              <input 
+                type="text" 
+                value={temasInteres}
+                onChange={(e) => setTemasInteres(e.target.value)}
+                placeholder="Ej. Innovación, Liderazgo"
+                style={estilos.input}
+              />
+            </div>
           </div>
 
           <div style={estilos.fila}>
@@ -234,7 +274,7 @@ const estilos = {
   fila: { display: 'flex', gap: '12px' },
   grupoInput: { flex: 1, display: 'flex', flexDirection: 'column', textAlign: 'left' },
   etiqueta: { fontSize: '0.85rem', marginBottom: '5px', color: '#444444', fontWeight: '500' },
-  ayudaInput: { fontSize: '0.75rem', color: '#666666', marginTop: '3px' },
+  opcional: { fontSize: '0.75rem', color: '#888888', fontWeight: 'normal' },
   input: { padding: '10px', borderRadius: '6px', border: '1px solid #CCCCCC', backgroundColor: '#FAFAFA', color: '#333333', fontSize: '0.9rem', outline: 'none' },
   grupoCheckbox: { display: 'flex', alignItems: 'flex-start', gap: '8px', textAlign: 'left', marginTop: '5px' },
   checkbox: { cursor: 'pointer', width: '16px', height: '16px', marginTop: '2px' },

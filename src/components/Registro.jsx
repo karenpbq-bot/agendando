@@ -100,12 +100,13 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         <form onSubmit={manejarRegistro} style={estilos.formulario}>
           
           <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Nombre Completo</label>
+            <label style={estilos.etiqueta}>Código de Organización o Empresa</label>
             <input 
               type="text" 
-              value={nombreCompleto}
-              onChange={(e) => setNombreCompleto(e.target.value)}
-              style={estilos.input}
+              value={codigoEmpresa}
+              onChange={(e) => setCodigoEmpresa(e.target.value)}
+              placeholder="Ingresa tu código de acceso"
+              style={{ ...estilos.input, textTransform: 'uppercase' }}
               required 
             />
           </div>

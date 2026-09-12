@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../controladores/ctrl_agenda.dart';
 
 class CrearCitaVista extends StatefulWidget {
   const CrearCitaVista({super.key});
@@ -11,6 +12,10 @@ class _CrearCitaVistaState extends State<CrearCitaVista> {
   String _tipoSeleccionado = 'Individual';
   final TextEditingController _fechaController = TextEditingController();
   final TextEditingController _horaController = TextEditingController();
+  
+  // Instancia del controlador y variable de estado agregadas aquí
+  final ControladorAgenda _ctrlAgenda = ControladorAgenda();
+  bool _guardando = false;
 
   @override
   void dispose() {
@@ -105,17 +110,26 @@ class _CrearCitaVistaState extends State<CrearCitaVista> {
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                onPressed: () {
-                  // Más adelante conectaremos esto al ctrl_agenda.dart para el comando INSERT
-                  print('Guardando cita: $_tipoSeleccionado');
-                  Navigator.pop(context); // Regresa a la pantalla anterior
+                onPressed: _guardando ? null : () async {
+                  setState(() => _guardando = true);
+                  
+                  // Por ahora usamos una fecha estática para probar la inserción en la base de datos
+                  // Más adelante conectaremos esto a los selectores nativos del celular
+                  DateTime fechaPrueba = DateTime.now().add(const Duration(days: 1));
+                  
+                  bool exito = await _ctrlAgenda.crearReunion(_tipoSeleccionado, fechaPrueba);
+                  
+                  if (mounted) {
+                    setState(() => _guardando = false);
+                    if (exito) {
+                      Navigator.pop(context); // Cierra el formulario si fue exitoso
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Error al agendar la cita'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
                 },
-                child: const Text('Agendar Reunión', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                child: _guardando 
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Agendar Reunión', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),

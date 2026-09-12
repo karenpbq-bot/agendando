@@ -4,8 +4,8 @@ class Conexion {
   // Método principal para inicializar el puente con la base de datos
   static Future<void> inicializar() async {
     await Supabase.initialize(
-      url: 'AQUI_TU_URL_DE_SUPABASE',
-      anonKey: 'AQUI_TU_ANON_KEY_DE_SUPABASE',
+      url: 'https://hnwjjzpgguzysvapdfbm.supabase.co'
+      anonKey: 'sb_publishable_61CzW1YSHXBrnPCnF_Najg_vk6r3geu',
     );
   }
 

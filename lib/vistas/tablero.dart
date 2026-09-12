@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'calendario.dart';
+import 'acuerdos.dart';
 
 class TableroVista extends StatefulWidget {
   const TableroVista({super.key});
@@ -10,75 +12,23 @@ class TableroVista extends StatefulWidget {
 class _TableroVistaState extends State<TableroVista> {
   int _indiceActual = 0;
 
+  // Lista de las pantallas a mostrar según la pestaña seleccionada
+  final List<Widget> _pantallas = [
+    const _InicioVista(), // Lo que antes estaba directo en el body
+    const CalendarioVista(),
+    const AcuerdosVista(),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Mi Agenda', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Agendando', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1E3A8A),
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {}, // Futuro panel de notificaciones
-          ),
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. Saludo y Gamificación
-            const Text(
-              'Hola, Bienvenido',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
-                ],
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _Metrica(icono: Icons.star_rounded, valor: '150 XP', etiqueta: 'Acumulado', color: Colors.orange),
-                  _Metrica(icono: Icons.local_fire_department, valor: '3', etiqueta: 'Racha Actual', color: Colors.red),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // 2. Sección de Próximas Citas
-            const Text(
-              'Próximas Citas',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            _TarjetaResumen(
-              titulo: 'Reunión Grupal - Sinergia',
-              subtitulo: 'Mañana, 10:00 AM',
-              icono: Icons.groups,
-              colorIcono: Colors.blue,
-            ),
-            const SizedBox(height: 12),
-            _TarjetaResumen(
-              titulo: 'Revisión Individual (Juan P.)',
-              subtitulo: 'Jueves 17, 04:00 PM',
-              icono: Icons.person,
-              colorIcono: Colors.green,
-            ),
-          ],
-        ),
-      ),
-      // 3. Barra de Navegación Modular
+      body: _pantallas[_indiceActual], // Muestra la pantalla correspondiente
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _indiceActual,
         selectedItemColor: const Color(0xFF1E3A8A),
@@ -98,54 +48,49 @@ class _TableroVistaState extends State<TableroVista> {
   }
 }
 
-// Widgets de apoyo para mantener el código principal limpio
-class _Metrica extends StatelessWidget {
-  final IconData icono;
-  final String valor;
-  final String etiqueta;
-  final Color color;
-
-  const _Metrica({required this.icono, required this.valor, required this.etiqueta, required this.color});
+// Extraemos el diseño del inicio a un widget independiente para mantener el orden
+class _InicioVista extends StatelessWidget {
+  const _InicioVista();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icono, color: color, size: 32),
-        const SizedBox(height: 8),
-        Text(valor, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(etiqueta, style: const TextStyle(color: Colors.grey)),
-      ],
-    );
-  }
-}
-
-class _TarjetaResumen extends StatelessWidget {
-  final String titulo;
-  final String subtitulo;
-  final IconData icono;
-  final Color colorIcono;
-
-  const _TarjetaResumen({required this.titulo, required this.subtitulo, required this.icono, required this.colorIcono});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: Colors.grey.shade200),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: colorIcono.withOpacity(0.1),
-          child: Icon(icono, color: colorIcono),
-        ),
-        title: Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitulo),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {}, // Navegación al detalle de la cita
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Hola, Bienvenido', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    const Icon(Icons.star_rounded, color: Colors.orange, size: 32),
+                    const SizedBox(height: 8),
+                    const Text('150 XP', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('Acumulado', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+                Column(
+                  children: [
+                    const Icon(Icons.local_fire_department, color: Colors.red, size: 32),
+                    const SizedBox(height: 8),
+                    const Text('3', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('Racha Actual', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -111,19 +111,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             />
           </div>
 
-          <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Usa el código con el que invitaron a ser parte de esta comunidad>
-            <input 
-              type="text" 
-              value={codigoEmpresa}
-              onChange={(e) => setCodigoEmpresa(e.target.value)}
-              placeholder="Ej. TAM01 (Independientes) o código corporativo"
-              style={{ ...estilos.input, textTransform: 'uppercase' }}
-              required 
-            />
-            <span style={estilos.ayudaInput}>Usa el código con el que invitaron a ser parte de esta comunidad
-          </div>
-
           <div style={estilos.fila}>
             <div style={estilos.grupoInput}>
               <label style={estilos.etiqueta}>Nombre de Usuario</label>

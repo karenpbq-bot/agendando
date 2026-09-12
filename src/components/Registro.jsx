@@ -111,7 +111,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
           </div>
 
           <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Código de Organización o Empresa</label>
+            <label style={estilos.etiqueta}>Usa el código con el que invitaron a ser parte de esta comunidad>
             <input 
               type="text" 
               value={codigoEmpresa}

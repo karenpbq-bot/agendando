@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import Registro from '../components/Registro'; // <-- AGREGA ESTA LÍNEA AQUÍ
 
 export default function Login({ onLoginExitoso }) {
   const [usuario, setUsuario] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [recordarSesion, setRecordarSesion] = useState(false);
+  const [pantallaRegistro, setPantallaRegistro] = useState(false); // <-- AGREGA ESTA LÍNEA AQUÍ
   
   const [intentos, setIntentos] = useState(0);
   const [bloqueoHasta, setBloqueoHasta] = useState(null);
@@ -141,6 +143,15 @@ export default function Login({ onLoginExitoso }) {
             {cargando ? 'Verificando...' : (bloqueoHasta ? 'Bloqueado' : 'Ingresar')}
           </button>
         </form>
+        <div style={estilos.divisorRegistro}>
+          <span style={estilos.textoO}>¿Nuevo en la plataforma?</span>
+          <button 
+            type="button" 
+            onClick={() => setPantallaRegistro(true)}
+            style={estilos.botonRegistro}
+          >
+            Registrarse ahora
+          </button>
       </div>
     </div>
   );
@@ -159,5 +170,10 @@ const estilos = {
   checkbox: { cursor: 'pointer', width: '16px', height: '16px' },
   etiquetaCheckbox: { fontSize: '0.85rem', color: '#666666', cursor: 'pointer' },
   boton: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' },
-  mensaje: { fontSize: '0.9rem', margin: '0', fontWeight: '500' }
+  mensaje: { fontSize: '0.9rem', margin: '0', fontWeight: '500' },
+  
+  // <-- AGREGA ESTAS TRES LÍNEAS AL FINAL DEL OBJETO ESTILOS
+  divisorRegistro: { marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #EEEEEE', display: 'flex', flexDirection: 'column', gap: '8px' },
+  textoO: { fontSize: '0.85rem', color: '#666666' },
+  botonRegistro: { background: 'none', border: 'none', color: '#00A89F', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }
 };

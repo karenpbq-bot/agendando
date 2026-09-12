@@ -11,7 +11,9 @@ export default function Disponibilidad({ usuarioId }) {
   const [cargando, setCargando] = useState(true);
   const [mensaje, setMensaje] = useState('');
 
-  // Generar los días del mes seleccionado y cargar datos
+  // Estado temporal para manejar qué día se quiere copiar en cada tarjeta
+  const [diaOrigenSeleccionado, setDiaOrigenSeleccionado] = useState({});
+
   useEffect(() => {
     if (usuarioId && mesSeleccionado) {
       generarDiasYCargar(mesSeleccionado);
@@ -21,8 +23,6 @@ export default function Disponibilidad({ usuarioId }) {
   const generarDiasYCargar = async (mesStr) => {
     setCargando(true);
     const [anio, mes] = mesStr.split('-').map(Number);
-    
-    // Obtener cantidad de días del mes
     const ultimoDia = new Date(anio, mes, 0).getDate();
     const listaDias = [];
     
@@ -40,8 +40,7 @@ export default function Disponibilidad({ usuarioId }) {
 
     setDiasDelMes(listaDias);
 
-    // Cargar restricciones guardadas de Supabase para este mes
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('agd_restricciones_disponibilidad')
       .select('*')
       .eq('usuario_id', usuarioId)
@@ -53,8 +52,8 @@ export default function Disponibilidad({ usuarioId }) {
       mapa[item.fecha] = existente || {
         fecha: item.fecha,
         bloqueado_todo_el_dia: item.nombreDia === 'Sábado' || item.nombreDia === 'Domingo',
-        tramo_1_inicio: '00:00', tramo_1_fin: '08:00', // Predeterminado madrugada
-        tramo_2_inicio: '22:00', tramo_2_fin: '23:59', // Predeterminado noche
+        tramo_1_inicio: '00:00', tramo_1_fin: '08:00',
+        tramo_2_inicio: '22:00', tramo_2_fin: '23:59',
         tramo_3_inicio: '', tramo_3_fin: '',
         tramo_4_inicio: '', tramo_4_fin: ''
       };
@@ -74,28 +73,29 @@ export default function Disponibilidad({ usuarioId }) {
     }));
   };
 
-  // Replicar configuración de una fecha específica a todos los días con el mismo nombre (ej. todos los lunes)
-  const replicarPorNombreDia = (fechaModelo) => {
-    const modelo = restricciones[fechaModelo];
-    const fechaObjModelo = new Date(fechaModelo);
-    const nombreModelo = fechaObjModelo.toLocaleDateString('es-ES', { weekday: 'long' });
+  // Copiar la configuración de una fecha específica a otra fecha destino concreta
+  const aplicarCopia = (fechaDestino) => {
+    const fechaOrigen = diaOrigenSeleccionado[fechaDestino];
+    if (!fechaOrigen) {
+      setMensaje('Selecciona primero un día de origen para copiar.');
+      setTimeout(() => setMensaje(''), 3000);
+      return;
+    }
 
-    setRestricciones(prev => {
-      const actualizado = { ...prev };
-      diasDelMes.forEach(d => {
-        const obj = new Date(d.fecha);
-        const nombreD = obj.toLocaleDateString('es-ES', { weekday: 'long' });
-        if (nombreD === nombreModelo) {
-          actualizado[d.fecha] = {
-            ...modelo,
-            fecha: d.fecha
-          };
-        }
-      });
-      return actualizado;
-    });
+    const datosOrigen = restricciones[fechaOrigen];
+    if (!datosOrigen) return;
 
-    setMensaje(`Se replicaron los horarios de este día a todos los ${nombreModelo.toUpperCase()} del mes.`);
+    setRestricciones(prev => ({
+      ...prev,
+      [fechaDestino]: {
+        ...datosOrigen,
+        fecha: fechaDestino // Mantiene la fecha destino pero copia los tramos y bloqueos
+      }
+    }));
+
+    const origenItem = diasDelMes.find(d => d.fecha === fechaOrigen);
+    const destinoItem = diasDelMes.find(d => d.fecha === fechaDestino);
+    setMensaje(`Se copió la configuración del ${origenItem?.nombreDia} (${origenItem?.diaNumero}) al ${destinoItem?.nombreDia} (${destinoItem?.diaNumero}).`);
     setTimeout(() => setMensaje(''), 4000);
   };
 
@@ -138,7 +138,7 @@ export default function Disponibilidad({ usuarioId }) {
         setTimeout(() => setMensaje(''), 4000);
       }
     } catch (err) {
-      setMensaje('Error de conexión con la base de datos.');
+      setMensaje('Error de conexión.');
     } finally {
       setCargando(false);
     }
@@ -148,10 +148,9 @@ export default function Disponibilidad({ usuarioId }) {
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Disponibilidad por Fechas</h2>
       <p style={estilos.subtitulo}>
-        Gestiona restricciones por día específico o replica patrones (ej. replicar un Lunes a todo el mes).
+        Configura tus tramos o copia los horarios de cualquier otro día del mes (ej. replicar el Lunes al Martes o Jueves al Miércoles).
       </p>
 
-      {/* Selector de Mes */}
       <div style={estilos.seccionMes}>
         <label style={estilos.labelMes}>Seleccionar Mes:</label>
         <input 
@@ -165,28 +164,16 @@ export default function Disponibilidad({ usuarioId }) {
       <form onSubmit={guardarConfiguracion}>
         {diasDelMes.map(d => {
           const item = restricciones[d.fecha] || {};
-          const esLunesUotro = d.nombreDia === 'Lunes'; // Destacar visualmente los lunes o cualquier día clave
 
           return (
-            <div key={d.fecha} style={{
-              ...estilos.tarjetaDia, 
-              borderColor: esLunesUotro ? '#00A89F' : '#EAEAEA'
-            }}>
+            <div key={d.fecha} style={estilos.tarjetaDia}>
               <div style={estilos.cabeceraDia}>
-                <div>
+                <div style={estilos.infoDia}>
                   <span style={estilos.badgeFecha}>{d.diaNumero}</span>
                   <span style={estilos.nombreDia}>{d.nombreDia}</span>
                 </div>
 
                 <div style={estilos.accionesDerecha}>
-                  <button 
-                    type="button" 
-                    onClick={() => replicarPorNombreDia(d.fecha)}
-                    style={estilos.botonReplicar}
-                    title={`Aplicar este horario a todos los ${d.nombreDia}s del mes`}
-                  >
-                    Replicar {d.nombreDia}s
-                  </button>
                   <label style={estilos.labelCheckbox}>
                     <input 
                       type="checkbox"
@@ -199,11 +186,36 @@ export default function Disponibilidad({ usuarioId }) {
                 </div>
               </div>
 
+              {/* Barra de Copia Flexible por Día */}
+              <div style={estilos.barraCopia}>
+                <select 
+                  value={diaOrigenSeleccionado[d.fecha] || ''}
+                  onChange={(e) => setDiaOrigenSeleccionado(prev => ({ ...prev, [d.fecha]: e.target.value }))}
+                  style={estilos.selectCopia}
+                >
+                  <option value="">Copiar desde...</option>
+                  {diasDelMes.map(orig => (
+                    orig.fecha !== d.fecha && (
+                      <option key={orig.fecha} value={orig.fecha}>
+                        {orig.nombreDia} {orig.diaNumero}
+                      </option>
+                    )
+                  ))}
+                </select>
+                <button 
+                  type="button" 
+                  onClick={() => aplicarCopia(d.fecha)}
+                  style={estilos.botonAplicarCopia}
+                >
+                  Aplicar
+                </button>
+              </div>
+
               {!item.bloqueado_todo_el_dia && (
                 <div style={estilos.tramosContainer}>
                   {[1, 2, 3, 4].map(num => (
                     <div key={num} style={estilos.tramoRow}>
-                      <span style={estilos.tramoLabel}>Tramo {num}</span>
+                      <span style={estilos.tramoLabel}>T{num}</span>
                       <div style={estilos.inputsTimeWrapper}>
                         <input 
                           type="time" 
@@ -230,7 +242,7 @@ export default function Disponibilidad({ usuarioId }) {
         {mensaje && <p style={estilos.mensaje}>{mensaje}</p>}
 
         <button type="submit" disabled={cargando} style={estilos.botonGuardar}>
-          {cargando ? 'Guardando...' : 'Guardar Todas las Restricciones del Mes'}
+          {cargando ? 'Guardando...' : 'Guardar Todo el Mes'}
         </button>
       </form>
     </div>
@@ -238,26 +250,29 @@ export default function Disponibilidad({ usuarioId }) {
 }
 
 const estilos = {
-  contenedor: { padding: '15px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
-  titulo: { fontSize: '1.3rem', color: '#333333', marginBottom: '5px', textAlign: 'center' },
-  subtitulo: { fontSize: '0.85rem', color: '#666666', marginBottom: '15px', textAlign: 'center', lineHeight: '1.4' },
-  seccionMes: { display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '15px', backgroundColor: '#FFFFFF', padding: '12px', borderRadius: '8px', border: '1px solid #EAEAEA' },
-  labelMes: { fontSize: '0.85rem', fontWeight: 'bold', color: '#444' },
-  inputMes: { padding: '8px', borderRadius: '6px', border: '1px solid #CCCCCC', fontSize: '0.9rem', backgroundColor: '#FAFAFA' },
-  tarjetaDia: { backgroundColor: '#FFFFFF', padding: '12px 14px', borderRadius: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)', marginBottom: '10px', border: '1px solid' },
-  cabeceraDia: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #F0F0F0', paddingBottom: '6px' },
-  badgeFecha: { backgroundColor: '#EBF5F7', color: '#00A89F', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.85rem', marginRight: '6px' },
-  nombreDia: { fontSize: '0.95rem', color: '#333', fontWeight: 'bold' },
-  accionesDerecha: { display: 'flex', alignItems: 'center', gap: '10px' },
-  botonReplicar: { background: '#EBF5F7', border: '1px solid #00A89F', color: '#00A89F', fontSize: '0.7rem', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
-  labelCheckbox: { fontSize: '0.75rem', color: '#D9534F', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' },
-  checkbox: { width: '16px', height: '16px', cursor: 'pointer' },
-  tramosContainer: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  tramoRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#555555' },
-  tramoLabel: { fontWeight: '500', color: '#666', minWidth: '55px' },
-  inputsTimeWrapper: { display: 'flex', alignItems: 'center', gap: '6px' },
-  inputTime: { padding: '6px 4px', borderRadius: '6px', border: '1px solid #CCCCCC', fontSize: '0.8rem', backgroundColor: '#FAFAFA', width: '100px', textAlign: 'center' },
-  separadorHora: { color: '#888', fontSize: '0.8rem' },
-  mensaje: { fontSize: '0.85rem', color: '#00A89F', fontWeight: 'bold', textAlign: 'center', margin: '15px 0' },
-  botonGuardar: { width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0, 168, 159, 0.2)', marginTop: '10px' }
+  contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
+  titulo: { fontSize: '1.2rem', color: '#333333', marginBottom: '4px', textAlign: 'center' },
+  subtitulo: { fontSize: '0.8rem', color: '#666666', marginBottom: '12px', textAlign: 'center', lineHeight: '1.3' },
+  seccionMes: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid #EAEAEA', boxSizing: 'border-box' },
+  labelMes: { fontSize: '0.8rem', fontWeight: 'bold', color: '#444' },
+  inputMes: { padding: '8px', borderRadius: '6px', border: '1px solid #CCCCCC', fontSize: '0.85rem', backgroundColor: '#FAFAFA', width: '100%', boxSizing: 'border-box' },
+  tarjetaDia: { backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: '10px', border: '1px solid #EAEAEA', boxSizing: 'border-box', width: '100%' },
+  cabeceraDia: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', borderBottom: '1px solid #F0F0F0', paddingBottom: '4px' },
+  infoDia: { display: 'flex', alignItems: 'center', overflow: 'hidden' },
+  badgeFecha: { backgroundColor: '#EBF5F7', color: '#00A89F', padding: '2px 5px', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.75rem', marginRight: '5px', flexShrink: '0' },
+  nombreDia: { fontSize: '0.85rem', color: '#333', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  accionesDerecha: { display: 'flex', alignItems: 'center', gap: '6px', flexShrink: '0' },
+  labelCheckbox: { fontSize: '0.7rem', color: '#D9534F', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', whiteSpace: 'nowrap' },
+  checkbox: { width: '14px', height: '14px', cursor: 'pointer' },
+  barraCopia: { display: 'flex', gap: '6px', marginBottom: '8px', backgroundColor: '#F4FBFB', padding: '6px', borderRadius: '6px', border: '1px solid #D1F0EE' },
+  selectCopia: { flex: 1, padding: '4px', borderRadius: '4px', border: '1px solid #00A89F', fontSize: '0.75rem', backgroundColor: '#FFF', color: '#333' },
+  botonAplicarCopia: { background: '#00A89F', border: 'none', color: '#FFF', fontSize: '0.7rem', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', flexShrink: '0' },
+  tramosContainer: { display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', boxSizing: 'border-box' },
+  tramoRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#555555', width: '100%' },
+  tramoLabel: { fontWeight: '500', color: '#666', width: '25px', flexShrink: '0' },
+  inputsTimeWrapper: { display: 'flex', alignItems: 'center', gap: '4px', flex: '1', justifyContent: 'flex-end', boxSizing: 'border-box' },
+  inputTime: { padding: '5px 2px', borderRadius: '4px', border: '1px solid #CCCCCC', fontSize: '0.75rem', backgroundColor: '#FAFAFA', width: '42%', maxWidth: '95px', textAlign: 'center', boxSizing: 'border-box' },
+  separadorHora: { color: '#888', fontSize: '0.75rem', flexShrink: '0' },
+  mensaje: { fontSize: '0.8rem', color: '#00A89F', fontWeight: 'bold', textAlign: 'center', margin: '10px 0' },
+  botonGuardar: { width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0, 168, 159, 0.2)', marginTop: '10px', boxSizing: 'border-box' }
 };

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'calendario.dart';
 import 'acuerdos.dart';
+import '../controladores/ctrl_agenda.dart';
 
 class TableroVista extends StatefulWidget {
   const TableroVista({super.key});
@@ -49,8 +50,16 @@ class _TableroVistaState extends State<TableroVista> {
 }
 
 // Extraemos el diseño del inicio a un widget independiente para mantener el orden
-class _InicioVista extends StatelessWidget {
+class _InicioVista extends StatefulWidget {
   const _InicioVista();
+
+  @override
+  State<_InicioVista> createState() => _InicioVistaState();
+}
+
+class _InicioVistaState extends State<_InicioVista> {
+  // Instanciamos el controlador que lee tu base de datos SIG
+  final ControladorAgenda _ctrlAgenda = ControladorAgenda();
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +70,7 @@ class _InicioVista extends StatelessWidget {
         children: [
           const Text('Hola, Bienvenido', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
+          // 1. Tarjeta de Gamificación
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -89,6 +99,66 @@ class _InicioVista extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 24),
+          const Text('Próximas Citas', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          
+          // 2. Lector Dinámico de Citas desde Supabase
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _ctrlAgenda.obtenerProximasCitas(),
+            builder: (context, snapshot) {
+              // Mientras carga la información
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              // Si ocurre un error de conexión
+              if (snapshot.hasError) {
+                return Text('Error al cargar citas: ${snapshot.error}');
+              }
+              
+              final citas = snapshot.data ?? [];
+              
+              // Si la tabla está vacía para este usuario
+              if (citas.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('No tienes citas programadas.', style: TextStyle(color: Colors.grey)),
+                );
+              }
+
+              // Genera una tarjeta por cada cita encontrada en la base de datos
+              return Column(
+                children: citas.map((cita) {
+                  final esGrupal = cita['tipo'] == 'Grupal';
+                  // Lee el nombre del grupo si es grupal, sino indica que es individual
+                  final nombreGrupo = cita['agd_grupos']?['nombre'] ?? 'Sin grupo';
+                  final titulo = esGrupal ? 'Reunión Grupal - $nombreGrupo' : 'Revisión Individual';
+                  
+                  // Formato de fecha simplificado
+                  final fechaHora = DateTime.parse(cita['fecha_hora']);
+                  final fechaStr = '${fechaHora.day}/${fechaHora.month}/${fechaHora.year} - ${fechaHora.hour}:${fechaHora.minute.toString().padLeft(2, '0')}';
+
+                  return Card(
+                    elevation: 0,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      side: BorderSide(color: Colors.grey.shade200),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: (esGrupal ? Colors.blue : Colors.green).withOpacity(0.1),
+                        child: Icon(esGrupal ? Icons.groups : Icons.person, color: esGrupal ? Colors.blue : Colors.green),
+                      ),
+                      title: Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(fechaStr),
+                      trailing: const Icon(Icons.chevron_right),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
           ),
         ],
       ),

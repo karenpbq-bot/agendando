@@ -8,8 +8,8 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
-  const [esIndependiente, setEsIndependiente] = useState(false);
-  const [empresa, setEmpresa] = useState('');
+  const [codigoEmpresa, setCodigoEmpresa] = useState(''); // Campo para ingresar el código
+  
   const [rol, setRol] = useState('Empresario'); 
   const [plan, setPlan] = useState('prueba'); 
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
@@ -28,6 +28,20 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     setMensaje('');
 
     try {
+      // 1. Buscamos la empresa en Supabase utilizando el código ingresado
+      const { data: empresaEncontrada, error: errorEmpresa } = await supabase
+        .from('empresas')
+        .select('id, nombre')
+        .eq('codigo_empresa', codigoEmpresa.trim().toUpperCase())
+        .single();
+
+      if (errorEmpresa || !empresaEncontrada) {
+        setMensaje('El código de organización es inválido o no existe.');
+        setCargando(false);
+        return;
+      }
+
+      // 2. Verificamos si el nombre de usuario ya está ocupado
       const { data: usuarioExistente } = await supabase
         .from('usuarios')
         .select('nombre_usuario')
@@ -40,9 +54,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // Definimos el valor de la empresa según la selección del usuario
-      const organizacionFinal = esIndependiente ? 'Independiente' : (empresa.trim() || 'Independiente');
-
+      // 3. Registramos al usuario utilizando el ID numérico de la empresa encontrada
       const { data, error } = await supabase
         .from('usuarios')
         .insert([
@@ -52,8 +64,9 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             password_hash: password,
             dni: dni,
             telefono: telefono,
+            email: correo, // Nota: según tu tabla se llama email o correo, ajustamos ambos si es necesario
             correo: correo,
-            empresa_id: organizacionFinal,
+            empresa_id: empresaEncontrada.id, // ¡Aquí va el número de ID de la empresa!
             rol: rol,
             plan: plan,
             pago_al_dia: plan === 'prueba',
@@ -66,7 +79,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
       if (error) {
         setMensaje('Error al registrar usuario: ' + error.message);
       } else {
-        setMensaje('¡Registro exitoso! Iniciando sesión...');
+        setMensaje(`¡Registro exitoso vinculado a ${empresaEncontrada.nombre}! Iniciando sesión...`);
         setTimeout(() => {
           onRegistroExitoso(data);
         }, 1500);
@@ -98,31 +111,16 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
           </div>
 
           <div style={estilos.grupoInput}>
-            <div style={estilos.filaLabel}>
-              <label style={estilos.etiqueta}>Organización / Empresa</label>
-              <div style={estilos.grupoCheckIndependiente}>
-                <input 
-                  type="checkbox" 
-                  id="independiente" 
-                  checked={esIndependiente}
-                  onChange={(e) => {
-                    setEsIndependiente(e.target.checked);
-                    if (e.target.checked) setEmpresa('');
-                  }}
-                  style={estilos.checkboxPequeno}
-                />
-                <label htmlFor="independiente" style={estilos.etiquetaCheckPequeno}>Soy Independiente</label>
-              </div>
-            </div>
-            
+            <label style={estilos.etiqueta}>Código de Organización o Empresa</label>
             <input 
               type="text" 
-              value={empresa}
-              onChange={(e) => setEmpresa(e.target.value)}
-              placeholder={esIndependiente ? "No aplica" : "Ej. Empresa ABC / Grupo Ejecutivos"}
-              disabled={esIndependiente}
-              style={{ ...estilos.input, backgroundColor: esIndependiente ? '#EEEEEE' : '#FAFAFA', color: esIndependiente ? '#888888' : '#333333' }}
+              value={codigoEmpresa}
+              onChange={(e) => setCodigoEmpresa(e.target.value)}
+              placeholder="Ej. TAM01 (Independientes) o código corporativo"
+              style={{ ...estilos.input, textTransform: 'uppercase' }}
+              required 
             />
+            <span style={estilos.ayudaInput}>Si eres independiente, ingresa el código TAM01.</span>
           </div>
 
           <div style={estilos.fila}>
@@ -226,7 +224,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
           {mensaje && <p style={estilos.mensaje}>{mensaje}</p>}
 
           <button type="submit" disabled={cargando} style={estilos.boton}>
-            {cargando ? 'Registrando...' : 'Completar Registro'}
+            {cargando ? 'Verificando y Registrando...' : 'Completar Registro'}
           </button>
 
           <button type="button" onClick={onVolverLogin} style={estilos.botonSecundario}>
@@ -247,11 +245,8 @@ const estilos = {
   formulario: { display: 'flex', flexDirection: 'column', gap: '15px' },
   fila: { display: 'flex', gap: '12px' },
   grupoInput: { flex: 1, display: 'flex', flexDirection: 'column', textAlign: 'left' },
-  filaLabel: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' },
-  grupoCheckIndependiente: { display: 'flex', alignItems: 'center', gap: '5px' },
-  checkboxPequeno: { cursor: 'pointer', width: '13px', height: '13px' },
-  etiquetaCheckPequeno: { fontSize: '0.75rem', color: '#00A89F', fontWeight: '600', cursor: 'pointer' },
   etiqueta: { fontSize: '0.85rem', marginBottom: '5px', color: '#444444', fontWeight: '500' },
+  ayudaInput: { fontSize: '0.75rem', color: '#666666', marginTop: '3px' },
   input: { padding: '10px', borderRadius: '6px', border: '1px solid #CCCCCC', backgroundColor: '#FAFAFA', color: '#333333', fontSize: '0.9rem', outline: 'none' },
   grupoCheckbox: { display: 'flex', alignItems: 'flex-start', gap: '8px', textAlign: 'left', marginTop: '5px' },
   checkbox: { cursor: 'pointer', width: '16px', height: '16px', marginTop: '2px' },

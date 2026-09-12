@@ -120,7 +120,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
               style={{ ...estilos.input, textTransform: 'uppercase' }}
               required 
             />
-            <span style={estilos.ayudaInput}>Si eres independiente, ingresa el código TAM01.</span>
+            <span style={estilos.ayudaInput}>Usa el código con el que invitaron a ser parte de esta comunidad
           </div>
 
           <div style={estilos.fila}>

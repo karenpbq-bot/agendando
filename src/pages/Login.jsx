@@ -8,6 +8,13 @@ export default function Login() {
   const [mensaje, setMensaje] = useState('');
   const [tiempoRestante, setTiempoRestante] = useState(0);
 
+  // Valores simulados para la barra de estado (Luego vendrán de Supabase)
+  const resumenHoy = {
+    sesiones: { confirmadas: 2, programadas: 1, canceladas: 0 },
+    puntosPendientes: 4 // Acuerdos sin cambio de estado
+  };
+  const totalSesiones = resumenHoy.sesiones.confirmadas + resumenHoy.sesiones.programadas + resumenHoy.sesiones.canceladas;
+
   useEffect(() => {
     let intervalo;
     if (bloqueoHasta) {
@@ -57,6 +64,31 @@ export default function Login() {
 
   return (
     <div style={estilos.contenedor}>
+      
+      {/* Nuevo Panel de Métricas y Gamificación */}
+      <div style={estilos.panelMetricas}>
+        <div style={estilos.itemMetrica}>
+          <span style={estilos.iconoMetrica}>📅</span>
+          <div>
+            <div style={estilos.tituloMetrica}>Sesiones para hoy: <span style={estilos.numeroResaltado}>{totalSesiones}</span></div>
+            <div style={estilos.detalleMetrica}>
+              {resumenHoy.sesiones.confirmadas} Confirmadas | {resumenHoy.sesiones.programadas} Programadas | {resumenHoy.sesiones.canceladas} Canceladas
+            </div>
+          </div>
+        </div>
+        
+        <div style={estilos.separador}></div>
+
+        <div style={estilos.itemMetrica}>
+          <span style={estilos.iconoMetrica}>🎯</span>
+          <div>
+            <div style={estilos.tituloMetrica}>Puntos pendientes: <span style={estilos.numeroResaltado}>{resumenHoy.puntosPendientes}</span></div>
+            <div style={estilos.detalleMetrica}>Acuerdos sin cambio de estado</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tarjeta de Login original */}
       <div style={estilos.tarjeta}>
         <h2 style={estilos.subtitulo}>¿Listo para gestionar tus agendas?</h2>
         <h1 style={estilos.tituloLogo}>Agendando</h1>
@@ -105,28 +137,72 @@ export default function Login() {
   );
 }
 
-// Estilos actualizados para un entorno claro y limpio
+// Estilos actualizados
 const estilos = {
   contenedor: {
     display: 'flex',
+    flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    backgroundColor: '#EBF5F7', // Celeste muy tenue
+    backgroundColor: '#EBF5F7', 
     fontFamily: 'sans-serif',
+    padding: '20px',
+  },
+  panelMetricas: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '20px',
+    backgroundColor: '#FFFFFF',
+    padding: '15px 30px',
+    borderRadius: '12px',
+    boxShadow: '0 4px 12px rgba(0, 168, 159, 0.05)',
+    marginBottom: '30px',
+    width: '100%',
+    maxWidth: '600px',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemMetrica: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  iconoMetrica: {
+    fontSize: '1.8rem',
+  },
+  tituloMetrica: {
+    fontSize: '0.95rem',
+    fontWeight: 'bold',
+    color: '#333333',
+  },
+  numeroResaltado: {
+    color: '#00A89F', // Turquesa TAMTARA
+    fontSize: '1.1rem',
+  },
+  detalleMetrica: {
+    fontSize: '0.75rem',
+    color: '#666666',
+    marginTop: '2px',
+  },
+  separador: {
+    width: '1px',
+    height: '40px',
+    backgroundColor: '#E0E0E0',
+    margin: '0 10px',
   },
   tarjeta: {
-    backgroundColor: '#FFFFFF', // Tarjeta blanca para generar contraste
+    backgroundColor: '#FFFFFF', 
     padding: '40px',
     borderRadius: '12px',
-    boxShadow: '0 8px 24px rgba(0, 168, 159, 0.08)', // Sombra sutil con un tono del logo
+    boxShadow: '0 8px 24px rgba(0, 168, 159, 0.08)', 
     width: '100%',
     maxWidth: '400px',
     textAlign: 'center',
   },
   subtitulo: {
     fontSize: '1rem',
-    color: '#666666', // Gris medio para lectura cómoda
+    color: '#666666', 
     fontWeight: 'normal',
     marginBottom: '5px',
   },
@@ -151,7 +227,7 @@ const estilos = {
   etiqueta: {
     fontSize: '0.9rem',
     marginBottom: '8px',
-    color: '#444444', // Gris oscuro
+    color: '#444444', 
     fontWeight: '500',
   },
   input: {
@@ -169,7 +245,7 @@ const estilos = {
     borderRadius: '8px',
     border: 'none',
     background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)',
-    color: '#FFFFFF', // Letra blanca para resaltar sobre el fondo de color
+    color: '#FFFFFF', 
     fontSize: '1rem',
     fontWeight: 'bold',
     cursor: 'pointer',

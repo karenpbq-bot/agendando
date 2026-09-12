@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Disponibilidad from '../components/Disponibilidad'; // Importamos el módulo del Bloque 1
 
 // Subcomponente modular: Bloque tipo acordeón (Desplegable)
 const BloqueDesplegable = ({ titulo, isOpen, onClick, children }) => {
@@ -25,16 +26,13 @@ const BloqueDesplegable = ({ titulo, isOpen, onClick, children }) => {
 };
 
 export default function Dashboard({ usuarioData, onCerrarSesion }) {
-  // Estado para controlar qué bloque está abierto (permite abrir solo uno a la vez para mantener orden)
   const [bloqueAbierto, setBloqueAbierto] = useState(null);
 
-  // Extraemos el rol del usuario. Si por alguna razón falla, asumimos 'Empresario' por máxima seguridad.
   const rol = usuarioData?.rol || 'Empresario';
 
-  // Matriz de permisos estructurada
   const esAdmin = rol === 'Administrador' || rol === 'Súper Administrador';
   const esChair = rol === 'Chair' || esAdmin;
-  const esEmpresario = true; // Todos ven el calendario
+  const esEmpresario = true;
 
   const alternarBloque = (id) => {
     setBloqueAbierto(bloqueAbierto === id ? null : id);
@@ -64,21 +62,18 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
 
         <div style={estilos.contenedorBloques}>
           
-          {/* Bloque 1: Solo Chairs y Admins */}
+          {/* Bloque 1: Disponibilidad Horaria (Solo Chairs y Admins) */}
           {esChair && (
             <BloqueDesplegable 
               titulo="Configuración de Disponibilidad" 
               isOpen={bloqueAbierto === 1} 
               onClick={() => alternarBloque(1)}
             >
-              <div style={estilos.placeholderMascara}>
-                <p>Módulo <b>Disponibilidad.jsx</b> se insertará aquí.</p>
-                <p>Rango horario, excepciones y proyección semanal/mensual.</p>
-              </div>
+              <Disponibilidad usuarioId={usuarioData?.id} />
             </BloqueDesplegable>
           )}
 
-          {/* Bloque 2: Todos (Empresarios, Chairs, Admins) */}
+          {/* Bloque 2: Calendario de Sesiones */}
           {esEmpresario && (
             <BloqueDesplegable 
               titulo="Calendario de Sesiones" 
@@ -87,12 +82,12 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
             >
               <div style={estilos.placeholderMascara}>
                 <p>Módulo <b>Calendario.jsx</b> se insertará aquí.</p>
-                <p>Vista interactiva mensual/semanal y gestión de estados (Reservado, Confirmado, Cancelado).</p>
+                <p>Vista interactiva y visualización de disponibilidad translúcida.</p>
               </div>
             </BloqueDesplegable>
           )}
 
-          {/* Bloque 3: Solo Chairs y Admins */}
+          {/* Bloque 3: Gestión de Grupos */}
           {esChair && (
             <BloqueDesplegable 
               titulo="Gestión de Grupos" 
@@ -101,12 +96,11 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
             >
               <div style={estilos.placeholderMascara}>
                 <p>Módulo <b>Grupos.jsx</b> se insertará aquí.</p>
-                <p>Creación de grupos y asignación de usuarios (Empresarios).</p>
               </div>
             </BloqueDesplegable>
           )}
 
-          {/* Bloque 4: Solo Administradores */}
+          {/* Bloque 4: Administración y Suscripciones */}
           {esAdmin && (
             <BloqueDesplegable 
               titulo="Administración y Suscripciones" 
@@ -115,7 +109,6 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
             >
               <div style={estilos.placeholderMascara}>
                 <p>Módulo <b>AdminUsuarios.jsx</b> se insertará aquí.</p>
-                <p>Control CRUD de usuarios, roles, estado de pago y bloqueo de acceso.</p>
               </div>
             </BloqueDesplegable>
           )}
@@ -126,7 +119,6 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
   );
 }
 
-// Estilos limpios y corporativos (TAMTARA Palette)
 const estilos = {
   contenedor: { minHeight: '100vh', backgroundColor: '#F4F7F6', fontFamily: 'sans-serif' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFFFFF', padding: '15px 30px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' },
@@ -136,7 +128,7 @@ const estilos = {
   datosUsuario: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' },
   nombre: { fontSize: '0.95rem', fontWeight: '600', color: '#333333' },
   rolTag: { fontSize: '0.7rem', backgroundColor: '#EBF5F7', color: '#00A89F', padding: '2px 8px', borderRadius: '12px', marginTop: '4px', fontWeight: 'bold', textTransform: 'uppercase' },
-  botonSalir: { backgroundColor: 'transparent', border: '1px solid #DDDDDD', padding: '8px 16px', borderRadius: '6px', color: '#666666', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500', transition: 'all 0.2s' },
+  botonSalir: { backgroundColor: 'transparent', border: '1px solid #DDDDDD', padding: '8px 16px', borderRadius: '6px', color: '#666666', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500' },
   main: { maxWidth: '800px', margin: '40px auto', padding: '0 20px' },
   tituloPrincipal: { fontSize: '1.8rem', color: '#333333', marginBottom: '5px' },
   subtitulo: { fontSize: '1rem', color: '#777777', marginBottom: '30px' },

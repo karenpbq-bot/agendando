@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'tablero.dart';
 
 class LoginVista extends StatefulWidget {
   const LoginVista({super.key});
@@ -88,8 +89,11 @@ class _LoginVistaState extends State<LoginVista> {
                     ),
                   ),
                   onPressed: () {
-                    // La conexión de validación con Supabase se programará aquí
-                    print('Correo capturado: ${_emailController.text}');
+                    // Navegación temporal para previsualizar el diseño del tablero
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const TableroVista()),
+                    );
                   },
                   child: const Text(
                     'Iniciar Sesión',

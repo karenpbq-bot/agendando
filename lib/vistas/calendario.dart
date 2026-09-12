@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'crear_cita.dart';
 
 class CalendarioVista extends StatelessWidget {
   const CalendarioVista({super.key});
@@ -33,7 +34,12 @@ class CalendarioVista extends StatelessWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const CrearCitaVista()),
+          );
+        },
         backgroundColor: const Color(0xFF1E3A8A),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),

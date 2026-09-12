@@ -8,8 +8,10 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
-  const [rol, setRol] = useState('Empresario'); // 'Chair' o 'Empresario'
-  const [plan, setPlan] = useState('prueba'); // 'prueba', 'mensual', 'semestral', 'anual'
+  const [esIndependiente, setEsIndependiente] = useState(false);
+  const [empresa, setEmpresa] = useState('');
+  const [rol, setRol] = useState('Empresario'); 
+  const [plan, setPlan] = useState('prueba'); 
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
   
   const [cargando, setCargando] = useState(false);
@@ -26,7 +28,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     setMensaje('');
 
     try {
-      // Validamos si el nombre de usuario ya existe
       const { data: usuarioExistente } = await supabase
         .from('usuarios')
         .select('nombre_usuario')
@@ -39,7 +40,9 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // Insertamos el nuevo usuario en Supabase con los campos requeridos
+      // Definimos el valor de la empresa según la selección del usuario
+      const organizacionFinal = esIndependiente ? 'Independiente' : (empresa.trim() || 'Independiente');
+
       const { data, error } = await supabase
         .from('usuarios')
         .insert([
@@ -50,9 +53,10 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             dni: dni,
             telefono: telefono,
             correo: correo,
+            empresa_id: organizacionFinal,
             rol: rol,
             plan: plan,
-            pago_al_dia: plan === 'prueba', // Si es prueba, entra activo de inmediato
+            pago_al_dia: plan === 'prueba',
             activo: true
           }
         ])
@@ -90,6 +94,34 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
               onChange={(e) => setNombreCompleto(e.target.value)}
               style={estilos.input}
               required 
+            />
+          </div>
+
+          <div style={estilos.grupoInput}>
+            <div style={estilos.filaLabel}>
+              <label style={estilos.etiqueta}>Organización / Empresa</label>
+              <div style={estilos.grupoCheckIndependiente}>
+                <input 
+                  type="checkbox" 
+                  id="independiente" 
+                  checked={esIndependiente}
+                  onChange={(e) => {
+                    setEsIndependiente(e.target.checked);
+                    if (e.target.checked) setEmpresa('');
+                  }}
+                  style={estilos.checkboxPequeno}
+                />
+                <label htmlFor="independiente" style={estilos.etiquetaCheckPequeno}>Soy Independiente</label>
+              </div>
+            </div>
+            
+            <input 
+              type="text" 
+              value={empresa}
+              onChange={(e) => setEmpresa(e.target.value)}
+              placeholder={esIndependiente ? "No aplica" : "Ej. Empresa ABC / Grupo Ejecutivos"}
+              disabled={esIndependiente}
+              style={{ ...estilos.input, backgroundColor: esIndependiente ? '#EEEEEE' : '#FAFAFA', color: esIndependiente ? '#888888' : '#333333' }}
             />
           </div>
 
@@ -215,11 +247,15 @@ const estilos = {
   formulario: { display: 'flex', flexDirection: 'column', gap: '15px' },
   fila: { display: 'flex', gap: '12px' },
   grupoInput: { flex: 1, display: 'flex', flexDirection: 'column', textAlign: 'left' },
+  filaLabel: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' },
+  grupoCheckIndependiente: { display: 'flex', alignItems: 'center', gap: '5px' },
+  checkboxPequeno: { cursor: 'pointer', width: '13px', height: '13px' },
+  etiquetaCheckPequeno: { fontSize: '0.75rem', color: '#00A89F', fontWeight: '600', cursor: 'pointer' },
   etiqueta: { fontSize: '0.85rem', marginBottom: '5px', color: '#444444', fontWeight: '500' },
   input: { padding: '10px', borderRadius: '6px', border: '1px solid #CCCCCC', backgroundColor: '#FAFAFA', color: '#333333', fontSize: '0.9rem', outline: 'none' },
   grupoCheckbox: { display: 'flex', alignItems: 'flex-start', gap: '8px', textAlign: 'left', marginTop: '5px' },
   checkbox: { cursor: 'pointer', width: '16px', height: '16px', marginTop: '2px' },
-  etiquetaCheckbox: { fontSize: '0.8rem', color: '#666666', cursor: 'pointer', lineHeight: '1.2' },
+  etiquetaCheckbox: { fontSize: '0.80rem', color: '#666666', cursor: 'pointer', lineHeight: '1.2' },
   mensaje: { fontSize: '0.85rem', color: '#00A89F', fontWeight: '500', margin: '0' },
   boton: { padding: '12px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '0.95rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '5px' },
   botonSecundario: { background: 'none', border: 'none', color: '#00A89F', fontSize: '0.85rem', cursor: 'pointer', marginTop: '10px', textDecoration: 'underline' }

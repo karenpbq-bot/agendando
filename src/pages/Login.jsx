@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient'; // Importamos la conexión a tu base de datos
 
-// Iconos SVG modernos y minimalistas integrados directamente
 const IconoSesiones = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00A89F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -21,17 +21,29 @@ const IconoPuntos = () => (
 export default function Login() {
   const [usuario, setUsuario] = useState('');
   const [contrasena, setContrasena] = useState('');
+  const [recordarSesion, setRecordarSesion] = useState(false);
+  const [modoDesbloqueo, setModoDesbloqueo] = useState(false);
+  
   const [intentos, setIntentos] = useState(0);
   const [bloqueoHasta, setBloqueoHasta] = useState(null);
   const [mensaje, setMensaje] = useState('');
   const [tiempoRestante, setTiempoRestante] = useState(0);
+  const [cargando, setCargando] = useState(false);
 
-  // Valores simulados
+  // Valores simulados de productividad (se conectarán a Supabase en la siguiente fase)
   const resumenHoy = {
     sesiones: { confirmadas: 2, programadas: 1, canceladas: 0 },
     puntosPendientes: 4
   };
   const totalSesiones = resumenHoy.sesiones.confirmadas + resumenHoy.sesiones.programadas + resumenHoy.sesiones.canceladas;
+
+  useEffect(() => {
+    const usuarioGuardado = localStorage.getItem('tamtara_usuario');
+    if (usuarioGuardado) {
+      setUsuario(usuarioGuardado);
+      setModoDesbloqueo(true);
+    }
+  }, []);
 
   useEffect(() => {
     let intervalo;
@@ -51,26 +63,59 @@ export default function Login() {
     return () => clearInterval(intervalo);
   }, [bloqueoHasta]);
 
-  const manejarIngreso = (e) => {
+  // Función asíncrona para consultar a Supabase
+  const manejarIngreso = async (e) => {
     e.preventDefault();
     if (bloqueoHasta) return;
+    
+    setCargando(true);
+    setMensaje('');
 
-    const esValido = false; 
+    try {
+      // Consultamos la tabla 'usuarios' buscando el nombre_usuario ingresado
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('nombre_usuario', usuario)
+        .single();
 
-    if (esValido) {
-      setMensaje('Ingreso exitoso');
-      setIntentos(0);
-    } else {
-      const nuevosIntentos = intentos + 1;
-      setIntentos(nuevosIntentos);
+      // Validamos si hubo error (usuario no existe) o la contraseña no coincide
+      if (error || !data || data.password_hash !== contrasena) {
+        const nuevosIntentos = intentos + 1;
+        setIntentos(nuevosIntentos);
 
-      if (nuevosIntentos >= 5) {
-        setBloqueoHasta(Date.now() + 10 * 60 * 1000);
-        setMensaje('Demasiados intentos. Acceso bloqueado.');
+        if (nuevosIntentos >= 5) {
+          setBloqueoHasta(Date.now() + 10 * 60 * 1000);
+          setMensaje('Demasiados intentos. Acceso bloqueado.');
+        } else {
+          setMensaje(`Usuario o contraseña incorrecta. Te quedan ${5 - nuevosIntentos} intentos.`);
+        }
       } else {
-        setMensaje(`Contraseña incorrecta. Te quedan ${5 - nuevosIntentos} intentos.`);
+        // Ingreso exitoso
+        setMensaje(`¡Bienvenido, ${data.nombre_completo}!`);
+        setIntentos(0);
+        
+        if (recordarSesion && !modoDesbloqueo) {
+          localStorage.setItem('tamtara_usuario', usuario);
+        }
+        
+        // Pasamos al modo desbloqueo para ver las métricas (o redirigir al Dashboard futuro)
+        setModoDesbloqueo(true);
       }
+    } catch (err) {
+      setMensaje('Error de conexión. Intenta nuevamente.');
+    } finally {
+      setCargando(false);
     }
+  };
+
+  const cambiarUsuario = () => {
+    localStorage.removeItem('tamtara_usuario');
+    setModoDesbloqueo(false);
+    setUsuario('');
+    setContrasena('');
+    setMensaje('');
+    setIntentos(0);
   };
 
   const formatoTiempo = (segundos) => {
@@ -81,51 +126,8 @@ export default function Login() {
 
   return (
     <div style={estilos.contenedor}>
-      <div style={estilos.tarjeta}>
-        <h2 style={estilos.subtitulo}>¿Listo para gestionar tus agendas?</h2>
-        <h1 style={estilos.tituloLogo}>Agendando</h1>
-        
-        <form onSubmit={manejarIngreso} style={estilos.formulario}>
-          <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Usuario</label>
-            <input 
-              type="text" 
-              value={usuario}
-              onChange={(e) => setUsuario(e.target.value)}
-              disabled={!!bloqueoHasta}
-              style={estilos.input}
-              required
-            />
-          </div>
-
-          <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Contraseña</label>
-            <input 
-              type="password" 
-              value={contrasena}
-              onChange={(e) => setContrasena(e.target.value)}
-              disabled={!!bloqueoHasta}
-              style={estilos.input}
-              required
-            />
-          </div>
-
-          {mensaje && (
-            <p style={{ ...estilos.mensaje, color: bloqueoHasta ? '#D32F2F' : '#F57C00' }}>
-              {mensaje} {bloqueoHasta && `(${formatoTiempo(tiempoRestante)})`}
-            </p>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={!!bloqueoHasta} 
-            style={{...estilos.boton, opacity: bloqueoHasta ? 0.6 : 1}}
-          >
-            {bloqueoHasta ? 'Bloqueado' : 'Ingresar'}
-          </button>
-        </form>
-
-        {/* Panel de métricas integrado bajo el botón */}
+      
+      {modoDesbloqueo && (
         <div style={estilos.panelMetricas}>
           <div style={estilos.itemMetrica}>
             <div style={estilos.contenedorIcono}>
@@ -139,6 +141,8 @@ export default function Login() {
             </div>
           </div>
           
+          <div style={estilos.separador}></div>
+
           <div style={estilos.itemMetrica}>
             <div style={estilos.contenedorIcono}>
               <IconoPuntos />
@@ -149,128 +153,102 @@ export default function Login() {
             </div>
           </div>
         </div>
+      )}
 
+      <div style={estilos.tarjeta}>
+        <h2 style={estilos.subtitulo}>
+          {modoDesbloqueo ? `Hola de nuevo` : '¿Listo para gestionar tus agendas?'}
+        </h2>
+        <h1 style={estilos.tituloLogo}>Agendando</h1>
+        
+        <form onSubmit={manejarIngreso} style={estilos.formulario}>
+          
+          {!modoDesbloqueo && (
+            <div style={estilos.grupoInput}>
+              <label style={estilos.etiqueta}>Usuario</label>
+              <input 
+                type="text" 
+                value={usuario}
+                onChange={(e) => setUsuario(e.target.value)}
+                disabled={!!bloqueoHasta || cargando}
+                style={estilos.input}
+                required
+              />
+            </div>
+          )}
+
+          <div style={estilos.grupoInput}>
+            <label style={estilos.etiqueta}>Contraseña para acceder</label>
+            <input 
+              type="password" 
+              value={contrasena}
+              onChange={(e) => setContrasena(e.target.value)}
+              disabled={!!bloqueoHasta || cargando}
+              style={estilos.input}
+              required
+              autoFocus={modoDesbloqueo}
+            />
+          </div>
+
+          {!modoDesbloqueo && (
+            <div style={estilos.grupoCheckbox}>
+              <input 
+                type="checkbox" 
+                id="recordar" 
+                checked={recordarSesion}
+                onChange={(e) => setRecordarSesion(e.target.checked)}
+                style={estilos.checkbox}
+              />
+              <label htmlFor="recordar" style={estilos.etiquetaCheckbox}>Mantener sesión abierta en este equipo</label>
+            </div>
+          )}
+
+          {mensaje && (
+            <p style={{ ...estilos.mensaje, color: mensaje.includes('Bienvenido') ? '#00A89F' : (bloqueoHasta ? '#D32F2F' : '#F57C00') }}>
+              {mensaje} {bloqueoHasta && `(${formatoTiempo(tiempoRestante)})`}
+            </p>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={!!bloqueoHasta || cargando} 
+            style={{...estilos.boton, opacity: (bloqueoHasta || cargando) ? 0.6 : 1}}
+          >
+            {cargando ? 'Verificando...' : (bloqueoHasta ? 'Bloqueado' : 'Ingresar')}
+          </button>
+        </form>
+
+        {modoDesbloqueo && (
+          <button onClick={cambiarUsuario} style={estilos.botonSecundario}>
+            No soy yo, cambiar de usuario
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 const estilos = {
-  contenedor: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-    backgroundColor: '#EBF5F7', 
-    fontFamily: 'sans-serif',
-    padding: '20px',
-  },
-  tarjeta: {
-    backgroundColor: '#FFFFFF', 
-    padding: '40px',
-    borderRadius: '12px',
-    boxShadow: '0 8px 24px rgba(0, 168, 159, 0.08)', 
-    width: '100%',
-    maxWidth: '420px',
-    textAlign: 'center',
-  },
-  subtitulo: {
-    fontSize: '1rem',
-    color: '#666666', 
-    fontWeight: 'normal',
-    marginBottom: '5px',
-  },
-  tituloLogo: {
-    fontSize: '2.5rem',
-    fontWeight: 'bold',
-    margin: '0 0 30px 0',
-    background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-  },
-  formulario: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  grupoInput: {
-    display: 'flex',
-    flexDirection: 'column',
-    textAlign: 'left',
-  },
-  etiqueta: {
-    fontSize: '0.9rem',
-    marginBottom: '8px',
-    color: '#444444', 
-    fontWeight: '500',
-  },
-  input: {
-    padding: '12px',
-    borderRadius: '8px',
-    border: '1px solid #CCCCCC',
-    backgroundColor: '#FAFAFA',
-    color: '#333333',
-    fontSize: '1rem',
-    outline: 'none',
-    transition: 'border-color 0.3s',
-  },
-  boton: {
-    padding: '14px',
-    borderRadius: '8px',
-    border: 'none',
-    background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)',
-    color: '#FFFFFF', 
-    fontSize: '1rem',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    marginTop: '5px',
-    boxShadow: '0 4px 12px rgba(0, 168, 159, 0.2)',
-  },
-  mensaje: {
-    fontSize: '0.9rem',
-    margin: '0',
-    fontWeight: '500',
-  },
-  panelMetricas: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    marginTop: '30px',
-    paddingTop: '25px',
-    borderTop: '1px solid #EEEEEE',
-  },
-  itemMetrica: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    textAlign: 'left',
-  },
-  contenedorIcono: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '40px',
-    height: '40px',
-    backgroundColor: '#FAFAFA',
-    borderRadius: '8px',
-    border: '1px solid #F0F0F0',
-  },
-  tituloMetrica: {
-    fontSize: '0.95rem',
-    fontWeight: '600',
-    color: '#333333',
-  },
-  numeroResaltado: {
-    color: '#00A89F',
-    fontSize: '1.05rem',
-  },
-  numeroResaltadoVerde: {
-    color: '#88D84D',
-    fontSize: '1.05rem',
-  },
-  detalleMetrica: {
-    fontSize: '0.75rem',
-    color: '#888888',
-    marginTop: '4px',
-  }
+  contenedor: { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#EBF5F7', fontFamily: 'sans-serif', padding: '20px' },
+  panelMetricas: { display: 'flex', flexWrap: 'wrap', gap: '20px', backgroundColor: '#FFFFFF', padding: '15px 30px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0, 168, 159, 0.05)', marginBottom: '20px', width: '100%', maxWidth: '600px', justifyContent: 'center', alignItems: 'center' },
+  itemMetrica: { display: 'flex', alignItems: 'center', gap: '12px' },
+  contenedorIcono: { display: 'flex', justifyContent: 'center', alignItems: 'center', width: '40px', height: '40px', backgroundColor: '#FAFAFA', borderRadius: '8px', border: '1px solid #F0F0F0' },
+  tituloMetrica: { fontSize: '0.95rem', fontWeight: 'bold', color: '#333333' },
+  numeroResaltado: { color: '#00A89F', fontSize: '1.1rem' },
+  numeroResaltadoVerde: { color: '#88D84D', fontSize: '1.1rem' },
+  detalleMetrica: { fontSize: '0.75rem', color: '#666666', marginTop: '2px' },
+  separador: { width: '1px', height: '40px', backgroundColor: '#EEEEEE', margin: '0 10px' },
+  tarjeta: { backgroundColor: '#FFFFFF', padding: '40px', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0, 168, 159, 0.08)', width: '100%', maxWidth: '400px', textAlign: 'center' },
+  subtitulo: { fontSize: '1rem', color: '#666666', fontWeight: 'normal', marginBottom: '5px' },
+  tituloLogo: { fontSize: '2.5rem', fontWeight: 'bold', margin: '0 0 30px 0', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
+  formulario: { display: 'flex', flexDirection: 'column', gap: '20px' },
+  grupoInput: { display: 'flex', flexDirection: 'column', textAlign: 'left' },
+  etiqueta: { fontSize: '0.9rem', marginBottom: '8px', color: '#444444', fontWeight: '500' },
+  input: { padding: '12px', borderRadius: '8px', border: '1px solid #CCCCCC', backgroundColor: '#FAFAFA', color: '#333333', fontSize: '1rem', outline: 'none' },
+  grupoCheckbox: { display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left', marginTop: '-10px' },
+  checkbox: { cursor: 'pointer', width: '16px', height: '16px' },
+  etiquetaCheckbox: { fontSize: '0.85rem', color: '#666666', cursor: 'pointer' },
+  boton: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' },
+  botonSecundario: { background: 'none', border: 'none', color: '#00A89F', fontSize: '0.85rem', cursor: 'pointer', marginTop: '20px', textDecoration: 'underline' },
+  mensaje: { fontSize: '0.9rem', margin: '0', fontWeight: '500' }
 };

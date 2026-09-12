@@ -1,18 +1,13 @@
 import 'package:flutter/material.dart';
-import 'core/conexion.dart'; 
+import 'core/conexion.dart';
+import 'vistas/login.dart'; // Importamos la nueva vista
 
-// 1. Punto de arranque de la aplicación
 void main() async {
-  // Garantiza que el motor gráfico esté listo antes de conectar a la base de datos
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Activa el puente de conexión hacia tu proyecto de Supabase
   await Conexion.inicializar();
-
   runApp(const AgendandoApp());
 }
 
-// 2. Estructura principal e inyección del diseño base
 class AgendandoApp extends StatelessWidget {
   const AgendandoApp({super.key});
 
@@ -25,14 +20,7 @@ class AgendandoApp extends StatelessWidget {
         primaryColor: const Color(0xFF1E3A8A), 
         useMaterial3: true,
       ),
-      home: const Scaffold(
-        body: Center(
-          child: Text(
-            '🚀 Motor y Base de Datos Conectados',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ),
-      ),
+      home: const LoginVista(), // Apuntamos la ruta de inicio al Login
     );
   }
 }

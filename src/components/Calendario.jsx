@@ -28,7 +28,6 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
-  // Generar los días del mes inmediatamente cada vez que cambia el mes seleccionado
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
     const ultimoDia = new Date(anio, mes, 0).getDate();
@@ -48,7 +47,6 @@ export default function Calendario({ usuarioId }) {
     setDiasSemanaMes(listaDias);
   }, [mesSeleccionado]);
 
-  // Cargar datos de Supabase de manera independiente
   useEffect(() => {
     if (usuarioId) {
       cargarDatosSupabase();
@@ -57,14 +55,12 @@ export default function Calendario({ usuarioId }) {
 
   const cargarDatosSupabase = async () => {
     try {
-      // 1. Cargar Empresarios
       const { data: dataEmpresarios } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol')
         .eq('rol', 'Empresario');
       if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
-      // 2. Cargar Restricciones del Mes
       const { data: dataRest } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
@@ -72,7 +68,6 @@ export default function Calendario({ usuarioId }) {
         .eq('mes_periodo', mesSeleccionado);
       if (dataRest) setRestricciones(dataRest);
 
-      // 3. Cargar Citas Agendadas
       const { data: dataCitas } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, telefono, email)')
@@ -178,7 +173,7 @@ export default function Calendario({ usuarioId }) {
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
   const esDisponible = (fecha, nombreDia, hora) => {
-    // Buscar excepción específica de fecha o plantilla base
+    // 1. Buscar excepción específica de fecha o plantilla base
     const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
     let restAConsultar = restriccionFecha;
 
@@ -186,15 +181,17 @@ export default function Calendario({ usuarioId }) {
       restAConsultar = restricciones.find(r => r.dia_semana === nombreDia && (!r.fecha_especifica || r.fecha_especifica === ''));
     }
 
-    // Por defecto, si es fin de semana y no hay configuración, bloquear; si es lunes a viernes, libre
+    // Si no hay configuración guardada para este día, por defecto está DISPONIBLE (sin bloqueos arbitrarios)
     if (!restAConsultar) {
-      return nombreDia !== 'Sábado' && nombreDia !== 'Domingo';
+      return true;
     }
 
+    // Si está marcado explícitamente para bloquear todo el día
     if (restAConsultar.bloqueado_todo_el_dia) {
       return false;
     }
 
+    // Verificar si la hora cae dentro de alguno de los 4 tramos de restricción guardados
     const enRestriccion = [
       { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
       { i: restAConsultar.tramo_2_inicio, f: restAConsultar.tramo_2_fin },
@@ -202,7 +199,10 @@ export default function Calendario({ usuarioId }) {
       { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
     ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
 
-    return !enRestriccion;
+    // Si está en tramo de restricción, NO está disponible
+    if (enRestriccion) return false;
+
+    return true;
   };
 
   return (
@@ -253,7 +253,7 @@ export default function Calendario({ usuarioId }) {
                     else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
                     else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
-                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)'; // Fondo amarillo translúcido sin texto
                   }
 
                   return (
@@ -266,11 +266,7 @@ export default function Calendario({ usuarioId }) {
                         <span style={estilos.textoCita}>
                           {citaEncontrada.estado.toUpperCase().substring(0, 3)}: {citaEncontrada.tipo_sesion === 'Grupal' ? citaEncontrada.nombre_grupo : 'Ind.'}
                         </span>
-                      ) : disponible ? (
-                        <span style={estilos.textoDisponible}>Libre</span>
-                      ) : (
-                        <span style={estilos.textoBloqueado}>--</span>
-                      )}
+                      ) : null}
                     </td>
                   );
                 })}
@@ -417,9 +413,7 @@ const estilos = {
   numDia: { fontSize: '0.8rem', fontWeight: 'bold' },
   tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
   tdCelda: { padding: '4px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer', height: '32px' },
-  textoDisponible: { fontSize: '0.6rem', color: '#B8860B', fontWeight: 'bold' },
   textoCita: { fontSize: '0.55rem', color: '#333', fontWeight: 'bold' },
-  textoBloqueado: { color: '#CCC', fontSize: '0.6rem' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },
   modalTitulo: { fontSize: '1rem', color: '#333', marginBottom: '15px', textAlign: 'center' },

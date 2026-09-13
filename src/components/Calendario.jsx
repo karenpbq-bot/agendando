@@ -35,7 +35,10 @@ export default function Calendario({ usuarioId }) {
   }, [usuarioId, mesSeleccionado]);
 
   const generarDiasDelMesYCargar = async (mesStr) => {
-    const [anio, mes] = mesStr.split('-').map(Number);
+    const partes = mesStr.split('-');
+    const anio = parseInt(partes[0], 10);
+    const mes = parseInt(partes[1], 10);
+    
     const ultimoDia = new Date(anio, mes, 0).getDate();
     const listaDias = [];
     
@@ -170,24 +173,18 @@ export default function Calendario({ usuarioId }) {
 
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
-  // Validación robusta cruzando excepción de fecha exacta o plantilla semanal base
   const esDisponible = (fecha, nombreDia, hora) => {
-    // 1. Buscar si existe una excepción puntual guardada para esta fecha específica
     const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
-    
     let restAConsultar = restriccionFecha;
 
-    // 2. Si no hay excepción específica, usar la plantilla semanal base del día correspondiente
     if (!restAConsultar) {
       restAConsultar = restricciones.find(r => r.dia_semana === nombreDia && (!r.fecha_especifica || r.fecha_especifica === ''));
     }
 
-    // Si el día está marcado como bloqueado por completo
     if (restAConsultar && restAConsultar.bloqueado_todo_el_dia) {
       return false;
     }
 
-    // Si hay restricciones configuradas, verificar los tramos de NO disponibilidad
     if (restAConsultar) {
       const enRestriccion = [
         { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
@@ -196,11 +193,9 @@ export default function Calendario({ usuarioId }) {
         { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
       ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
 
-      // Si cae dentro de un tramo restringido, NO está disponible
       if (enRestriccion) return false;
     }
 
-    // Por defecto, si no hay restricciones que lo bloqueen, el horario está disponible
     return true;
   };
 
@@ -232,7 +227,9 @@ export default function Calendario({ usuarioId }) {
             <tr>
               <th style={estilos.thHora}>Hora</th>
               {diasSemanaMes.map(d => (
-                <th key={d.fecha} style={estilos.thDia}>{d.nombreDia.slice(0,3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span></th>
+                <th key={d.fecha} style={estilos.thDia}>
+                  {d.nombreDia.slice(0, 3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span>
+                </th>
               ))}
             </tr>
           </thead>
@@ -250,7 +247,7 @@ export default function Calendario({ usuarioId }) {
                     else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
                     else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
-                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)'; // Amarillo translúcido de disponibilidad
+                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
                   }
 
                   return (

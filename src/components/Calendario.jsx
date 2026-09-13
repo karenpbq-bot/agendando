@@ -173,34 +173,41 @@ export default function Calendario({ usuarioId }) {
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
   const esDisponible = (fecha, nombreDia, hora) => {
-    // 1. Buscar excepción específica de fecha o plantilla base
+    // 1. Buscar regla específica para la fecha o buscar la plantilla base del día de la semana
     const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
-    let restAConsultar = restriccionFecha;
+    const restriccionBase = restricciones.find(r => r.dia_semana === nombreDia);
+    
+    const restAConsultar = restriccionFecha || restriccionBase;
 
-    if (!restAConsultar) {
-      restAConsultar = restricciones.find(r => r.dia_semana === nombreDia && (!r.fecha_especifica || r.fecha_especifica === ''));
-    }
+    // Si no hay ninguna restricción configurada, por defecto está disponible
+    if (!restAConsultar) return true;
 
-    // Si no hay configuración guardada para este día, por defecto está DISPONIBLE (sin bloqueos arbitrarios)
-    if (!restAConsultar) {
-      return true;
-    }
+    // Si el día entero está bloqueado
+    if (restAConsultar.bloqueado_todo_el_dia) return false;
 
-    // Si está marcado explícitamente para bloquear todo el día
-    if (restAConsultar.bloqueado_todo_el_dia) {
-      return false;
-    }
+    // Normalizar la hora actual de la celda a formato numérico o de comparación segura (ej. "08:00")
+    const horaCelda = hora.trim();
 
-    // Verificar si la hora cae dentro de alguno de los 4 tramos de restricción guardados
-    const enRestriccion = [
+    // Comprobar si la hora de la celda cae dentro de alguno de los 4 tramos de NO disponibilidad
+    const tramos = [
       { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
       { i: restAConsultar.tramo_2_inicio, f: restAConsultar.tramo_2_fin },
       { i: restAConsultar.tramo_3_inicio, f: restAConsultar.tramo_3_fin },
       { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
-    ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
+    ];
 
-    // Si está en tramo de restricción, NO está disponible
-    if (enRestriccion) return false;
+    for (let t of tramos) {
+      if (t.i && t.f) {
+        // Limpiar segundos si los hubiera (ej "08:00:00" a "08:00")
+        const inicio = t.i.substring(0, 5);
+        const fin = t.f.substring(0, 5);
+
+        // Si la hora de la celda está dentro del rango restringido, NO está disponible (retorna false)
+        if (horaCelda >= inicio && horaCelda < fin) {
+          return false;
+        }
+      }
+    }
 
     return true;
   };

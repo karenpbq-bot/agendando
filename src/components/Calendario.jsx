@@ -6,6 +6,7 @@ export default function Calendario({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
+  const [diasSemanaMes, setDiasSemanaMes] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
   const [citas, setCitas] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
@@ -13,64 +14,91 @@ export default function Calendario({ usuarioId }) {
   // Estados del Modal
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
-  const [horaSeleccionada, setHoraSeleccionada] = useState('');
+  const [citaExistenteId, setCitaExistenteId] = useState(null);
   
   // Campos del Formulario de Cita
-  const [tipoSession, setTipoSession] = useState('Individual'); // 'Individual' o 'Grupal'
+  const [tipoSession, setTipoSession] = useState('Individual');
   const [empresarioId, setEmpresarioId] = useState('');
   const [nombreGrupo, setNombreGrupo] = useState('');
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFin, setHoraFin] = useState('');
   const [linkZoom, setLinkZoom] = useState('');
+  const [estadoCita, setEstadoCita] = useState('confirmado');
   const [replicarMes, setReplicarMes] = useState(false);
   
   const [mensaje, setMensaje] = useState('');
 
   useEffect(() => {
-    if (usuarioId) {
-      cargarDatosIniciales();
+    if (usuarioId && mesSeleccionado) {
+      generarDiasDelMesYCargar(mesSeleccionado);
     }
   }, [usuarioId, mesSeleccionado]);
 
-  const cargarDatosIniciales = async () => {
-    // 1. Cargar Empresarios / Usuarios
+  const generarDiasDelMesYCargar = async (mesStr) => {
+    const [anio, mes] = mesStr.split('-').map(Number);
+    const ultimoDia = new Date(anio, mes, 0).getDate();
+    const listaDias = [];
+    
+    for (let d = 1; d <= ultimoDia; d++) {
+      const fechaObj = new Date(anio, mes - 1, d);
+      const fechaFormateada = `${anio}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const nombreDia = fechaObj.toLocaleDateString('es-ES', { weekday: 'long' });
+      
+      listaDias.push({
+        fecha: fechaFormateada,
+        diaNumero: String(d).padStart(2, '0'),
+        nombreDia: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)
+      });
+    }
+    setDiasSemanaMes(listaDias);
+
+    // 1. Cargar Empresarios
     const { data: dataEmpresarios } = await supabase
       .from('usuarios')
       .select('id, nombre_completo, telefono, email, rol')
       .eq('rol', 'Empresario');
-    
     if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
-    // 2. Cargar Restricciones del Mes (para calcular disponibilidad en amarillo translúcido)
+    // 2. Cargar Restricciones del Mes (Plantilla base y fechas específicas)
     const { data: dataRest } = await supabase
       .from('agd_restricciones_disponibilidad')
       .select('*')
       .eq('usuario_id', usuarioId)
-      .eq('mes_periodo', mesSeleccionado);
-    
+      .eq('mes_periodo', mesStr);
     if (dataRest) setRestricciones(dataRest);
 
-    // 3. Cargar Citas ya agendadas
+    // 3. Cargar Citas Agendadas
     const { data: dataCitas } = await supabase
       .from('agd_citas')
       .select('*, usuarios(nombre_completo, telefono, email)')
       .eq('chair_id', usuarioId);
-
     if (dataCitas) setCitas(dataCitas);
   };
 
-  const abrirModalParaCelda = (dia, hora) => {
+  const abrirModalParaCelda = (dia, hora, citaEncontrada = null) => {
     setDiaSeleccionado(dia);
-    setHoraSeleccionada(hora);
-    setHoraInicio(hora);
-    // Calcular una hora fin por defecto (ej. 1 hora después)
-    const [h] = hora.split(':');
-    const horaFinSugerida = `${String(parseInt(h) + 1).padStart(2, '0')}:00`;
-    setHoraFin(horaFinSugerida);
-    setEmpresarioId('');
-    setNombreGrupo('');
-    setLinkZoom('');
-    setReplicarMes(false);
+    
+    if (citaEncontrada) {
+      setCitaExistenteId(citaEncontrada.id);
+      setTipoSession(citaEncontrada.tipo_sesion || 'Individual');
+      setEmpresarioId(citaEncontrada.empresario_id || '');
+      setNombreGrupo(citaEncontrada.nombre_grupo || '');
+      setHoraInicio(citaEncontrada.hora_inicio || hora);
+      setHoraFin(citaEncontrada.hora_fin || '');
+      setLinkZoom(citaEncontrada.link_zoom || '');
+      setEstadoCita(citaEncontrada.estado || 'confirmado');
+    } else {
+      setCitaExistenteId(null);
+      setHoraInicio(hora);
+      const [h] = hora.split(':');
+      setHoraFin(`${String(parseInt(h) + 1).padStart(2, '0')}:00`);
+      setTipoSession('Individual');
+      setEmpresarioId('');
+      setNombreGrupo('');
+      setLinkZoom('');
+      setEstadoCita('confirmado');
+      setReplicarMes(false);
+    }
     setModalAbierto(true);
   };
 
@@ -82,82 +110,81 @@ export default function Calendario({ usuarioId }) {
       const empresObj = empresarios.find(e => e.id == empresarioId);
       const telefonoDestino = empresObj ? empresObj.telefono : '';
 
-      // Determinar fechas a registrar (si se marca replicar, calculamos los días iguales del mes)
-      const fechasAGuardar = [diaSeleccionado.fecha];
-      
-      if (replicarMes) {
-        const nombreDiaObjetivo = diaSeleccionado.nombreDia;
-        // Buscamos todas las fechas del mes que coincidan con el mismo día de la semana
-        const [anio, mes] = mesSeleccionado.split('-').map(Number);
-        const ultimoDia = new Date(anio, mes, 0).getDate();
-        
-        for (let d = 1; d <= ultimoDia; d++) {
-          const fObj = new Date(anio, mes - 1, d);
-          const fStr = `${anio}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          const nDia = fObj.toLocaleDateString('es-ES', { weekday: 'long' });
-          const nDiaCapitalizado = nDia.charAt(0).toUpperCase() + nDia.slice(1);
+      if (citaExistenteId) {
+        const { error } = await supabase.from('agd_citas')
+          .update({
+            empresario_id: empresarioId || null,
+            hora_inicio: horaInicio,
+            hora_fin: horaFin,
+            tipo_sesion: tipoSession,
+            nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
+            link_zoom: linkZoom,
+            estado: estadoCita
+          })
+          .eq('id', citaExistenteId);
 
-          if (nDiaCapitalizado === nombreDiaObjetivo && fStr !== diaSeleccionado.fecha) {
-            fechasAGuardar.push(fStr);
-          }
-        }
-      }
-
-      // Preparar payloads
-      const payloads = fechasAGuardar.map(fecha => ({
-        chair_id: usuarioId,
-        empresario_id: empresarioId || null,
-        fecha_cita: fecha,
-        hora_inicio: horaInicio,
-        hora_fin: horaFin,
-        tipo_sesion: tipoSession,
-        nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
-        link_zoom: linkZoom,
-        estado: 'Confirmado'
-      }));
-
-      const { error } = await supabase.from('agd_citas').insert(payloads);
-
-      if (error) {
-        setMensaje('Error al guardar cita: ' + error.message);
+        if (error) throw error;
+        setMensaje('¡Cita actualizada correctamente!');
       } else {
-        setMensaje('¡Sesión(es) agendada(s) correctamente!');
-        setModalAbierto(false);
-        cargarDatosIniciales();
+        const fechasAGuardar = [diaSeleccionado.fecha];
         
-        // Si hay teléfono, preparar enlace automático de WhatsApp web
-        if (telefonoDestino) {
-          const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, te ha sido asignada una sesión de mentoría (${tipoSession}). Link de Zoom: ${linkZoom}. Por favor, confírmanos tu asistencia.`);
-          window.open(`https://wa.me/${telefonoDestino}?text=${textoWs}`, '_blank');
+        if (replicarMes) {
+          const nombreDiaObjetivo = diaSeleccionado.nombreDia;
+          diasSemanaMes.forEach(d => {
+            if (d.nombreDia === nombreDiaObjetivo && d.fecha !== diaSeleccionado.fecha) {
+              fechasAGuardar.push(d.fecha);
+            }
+          });
         }
+
+        const payloads = fechasAGuardar.map(fecha => ({
+          chair_id: usuarioId,
+          empresario_id: empresarioId || null,
+          fecha_cita: fecha,
+          hora_inicio: horaInicio,
+          hora_fin: horaFin,
+          tipo_sesion: tipoSession,
+          nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
+          link_zoom: linkZoom,
+          estado: estadoCita
+        }));
+
+        const { error } = await supabase.from('agd_citas').insert(payloads);
+        if (error) throw error;
+        setMensaje('¡Sesión(es) agendada(s) correctamente!');
       }
+
+      setModalAbierto(false);
+      generarDiasDelMesYCargar(mesSeleccionado);
+      
+      if (telefonoDestino && estadoCita !== 'cancelado') {
+        const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado en estado *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom}. Por favor, confírmanos tu asistencia.`);
+        window.open(`https://wa.me/${telefonoDestino}?text=${textoWs}`, '_blank');
+      }
+
     } catch (err) {
-      setMensaje('Error en el proceso.');
+      setMensaje('Error en el proceso: ' + err.message);
     }
   };
 
-  // Generar lista de días de la semana actual o del mes
-  const obtenerDiasSemanaActual = () => {
-    // Ejemplo simplificado de simulación de semana
-    return [
-      { fecha: '2026-09-14', nombreDia: 'Lunes', numero: '14' },
-      { fecha: '2026-09-15', nombreDia: 'Martes', numero: '15' },
-      { fecha: '2026-09-16', nombreDia: 'Miércoles', numero: '16' },
-      { fecha: '2026-09-17', nombreDia: 'Jueves', numero: '17' },
-      { fecha: '2026-09-18', nombreDia: 'Viernes', numero: '18' },
-    ];
+  const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
+
+  // Validar disponibilidad cruzando fecha específica o plantilla semanal
+  const obtenerRestriccionDia = (fecha, nombreDia) => {
+    // 1. Buscar si hay excepción específica para la fecha concreta
+    const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
+    if (restriccionFecha) return restriccionFecha;
+
+    // 2. Si no hay excepción, buscar la plantilla base del día de la semana
+    const restriccionBase = restricciones.find(r => r.dia_semana === nombreDia && !r.fecha_especifica);
+    return restriccionBase;
   };
 
-  const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
-  const diasSemana = obtenerDiasSemanaActual();
-
-  // Comprobar si un bloque horario está en la disponibilidad del Chair (amarillo translúcido)
-  const esDisponible = (nombreDia, hora) => {
-    const rest = restricciones.find(r => r.dia_semana === nombreDia);
+  const esDisponible = (fecha, nombreDia, hora) => {
+    const rest = obtenerRestriccionDia(fecha, nombreDia);
     if (!rest || rest.bloqueado_todo_el_dia) return false;
 
-    // Verificar si la hora cae dentro de los tramos permitidos (no restringidos)
-    // O viceversa, si está marcado como libre. Asumimos disponible si NO está en tramo de restricción:
+    // Comprobar si la hora cae dentro de alguno de los 4 tramos de restricción
     const enRestriccion = [
       { i: rest.tramo_1_inicio, f: rest.tramo_1_fin },
       { i: rest.tramo_2_inicio, f: rest.tramo_2_fin },
@@ -172,7 +199,6 @@ export default function Calendario({ usuarioId }) {
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Calendario de Sesiones</h2>
       
-      {/* Selector de Mes */}
       <div style={estilos.seccionMes}>
         <input 
           type="month" 
@@ -184,20 +210,20 @@ export default function Calendario({ usuarioId }) {
 
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
 
-      {/* Leyenda */}
       <div style={estilos.leyenda}>
-        <span style={{...estilos.bolaLeyenda, backgroundColor: '#FFF9C4'}}></span> Disponible
-        <span style={{...estilos.bolaLeyenda, backgroundColor: '#D1F0EE'}}></span> Reservado
+        <span><b style={{color: '#B8860B'}}>■</b> Disponible</span>
+        <span><b style={{color: '#E65100'}}>■</b> Reservado</span>
+        <span><b style={{color: '#00796B'}}>■</b> Confirmado</span>
+        <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
       </div>
 
-      {/* Tabla del Calendario */}
       <div style={estilos.tablaContainer}>
         <table style={estilos.tabla}>
           <thead>
             <tr>
               <th style={estilos.thHora}>Hora</th>
-              {diasSemana.map(d => (
-                <th key={d.fecha} style={estilos.thDia}>{d.nombreDia} <br/><span style={estilos.numDia}>{d.numero}</span></th>
+              {diasSemanaMes.map(d => (
+                <th key={d.fecha} style={estilos.thDia}>{d.nombreDia.slice(0,3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span></th>
               ))}
             </tr>
           </thead>
@@ -205,26 +231,28 @@ export default function Calendario({ usuarioId }) {
             {horasDelDia.map(hora => (
               <tr key={hora}>
                 <td style={estilos.tdHora}>{hora}</td>
-                {diasSemana.map(d => {
-                  const disponible = esDisponible(d.nombreDia, hora);
+                {diasSemanaMes.map(d => {
+                  const disponible = esDisponible(d.fecha, d.nombreDia, hora);
                   const citaEncontrada = citas.find(c => c.fecha_cita === d.fecha && hora >= c.hora_inicio && hora < c.hora_fin);
 
                   let estiloCelda = { ...estilos.tdCelda };
                   if (citaEncontrada) {
-                    estiloCelda.backgroundColor = '#D1F0EE'; // Reservado
+                    if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
+                    else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
+                    else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
-                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)'; // Amarillo translúcido disponible
+                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)'; // Amarillo translúcido de disponibilidad
                   }
 
                   return (
                     <td 
                       key={d.fecha} 
                       style={estiloCelda}
-                      onClick={() => abrirModalParaCelda(d, hora)}
+                      onClick={() => abrirModalParaCelda(d, hora, citaEncontrada)}
                     >
                       {citaEncontrada ? (
                         <span style={estilos.textoCita}>
-                          {citaEncontrada.tipo_sesion === 'Grupal' ? `Grupal: ${citaEncontrada.nombre_grupo}` : 'Reservado'}
+                          {citaEncontrada.estado.toUpperCase()[:3]}: {citaEncontrada.tipo_sesion === 'Grupal' ? citaEncontrada.nombre_grupo : 'Ind.'}
                         </span>
                       ) : disponible ? (
                         <span style={estilos.textoDisponible}>Libre</span>
@@ -240,14 +268,27 @@ export default function Calendario({ usuarioId }) {
         </table>
       </div>
 
-      {/* VENTANA EMERGENTE (MODAL) DE GESTIÓN DE CITA */}
+      {/* MODAL */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
-            <h3 style={estilos.modalTitulo}>Gestionar Sesión: {diaSeleccionado?.nombreDia} {diaSeleccionado?.fecha}</h3>
+            <h3 style={estilos.modalTitulo}>Gestionar Cita: {diaSeleccionado?.nombreDia} {diaSeleccionado?.fecha}</h3>
             
             <form onSubmit={guardarCita} style={estilos.formularioModal}>
               
+              <div style={estilos.grupoInput}>
+                <label style={estilos.label}>Estado de la Sesión</label>
+                <select 
+                  value={estadoCita} 
+                  onChange={(e) => setEstadoCita(e.target.value)}
+                  style={{...estilos.input, fontWeight: 'bold'}}
+                >
+                  <option value="reservado">Reservado</option>
+                  <option value="confirmado">Confirmado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+
               <div style={estilos.grupoInput}>
                 <label style={estilos.label}>Tipo de Sesión</label>
                 <select 
@@ -324,15 +365,17 @@ export default function Calendario({ usuarioId }) {
                 />
               </div>
 
-              <div style={estilos.grupoCheckbox}>
-                <input 
-                  type="checkbox" 
-                  checked={replicarMes} 
-                  onChange={(e) => setReplicarMes(e.target.checked)} 
-                  id="rep"
-                />
-                <label htmlFor="rep" style={estilos.labelCheck}>Replicar esta sesión para los siguientes {diaSeleccionado?.nombreDia}s del mes</label>
-              </div>
+              {!citaExistenteId && (
+                <div style={estilos.grupoCheckbox}>
+                  <input 
+                    type="checkbox" 
+                    checked={replicarMes} 
+                    onChange={(e) => setReplicarMes(e.target.checked)} 
+                    id="rep"
+                  />
+                  <label htmlFor="rep" style={estilos.labelCheck}>Replicar sesión a los siguientes {diaSeleccionado?.nombreDia}s del mes</label>
+                </div>
+              )}
 
               <div style={estilos.modalBotones}>
                 <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrar}>Cancelar</button>
@@ -354,18 +397,17 @@ const estilos = {
   seccionMes: { marginBottom: '10px', textAlign: 'center' },
   inputMes: { padding: '6px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
-  leyenda: { display: 'flex', justifyContent: 'center', gap: '15px', fontSize: '0.75rem', marginBottom: '10px', alignItems: 'center' },
-  bolaLeyenda: { width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block', marginRight: '3px' },
+  leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
   tablaContainer: { overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
-  tabla: { width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' },
-  thHora: { padding: '8px 4px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '45px' },
-  thDia: { padding: '8px 4px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center' },
-  numDia: { fontSize: '0.9rem', fontWeight: 'bold' },
-  tdHora: { padding: '8px 4px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
-  tdCelda: { padding: '6px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer', height: '35px' },
-  textoDisponible: { fontSize: '0.65rem', color: '#B8860B', fontWeight: 'bold' },
-  textoCita: { fontSize: '0.65rem', color: '#00796B', fontWeight: 'bold' },
-  textoBloqueado: { color: '#CCC' },
+  tabla: { width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' },
+  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px' },
+  thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', minWidth: '45px' },
+  numDia: { fontSize: '0.8rem', fontWeight: 'bold' },
+  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
+  tdCelda: { padding: '4px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer', height: '32px' },
+  textoDisponible: { fontSize: '0.6rem', color: '#B8860B', fontWeight: 'bold' },
+  textoCita: { fontSize: '0.55rem', color: '#333', fontWeight: 'bold' },
+  textoBloqueado: { color: '#CCC', fontSize: '0.6rem' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },
   modalTitulo: { fontSize: '1rem', color: '#333', marginBottom: '15px', textAlign: 'center' },

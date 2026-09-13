@@ -44,14 +44,12 @@ export default function Disponibilidad({ usuarioId }) {
     }
     setDiasDelMes(listaDias);
 
-    // Consultar Supabase
     const { data } = await supabase
       .from('agd_restricciones_disponibilidad')
       .select('*')
       .eq('usuario_id', usuarioId)
       .eq('mes_periodo', mesStr);
 
-    // 1. Inicializar Plantilla Semanal
     const mapaBase = {};
     DIAS_SEMANA_GENERICOS.forEach(dia => {
       const existente = data?.find(r => r.dia_semana === dia && !r.fecha_especifica);
@@ -66,12 +64,10 @@ export default function Disponibilidad({ usuarioId }) {
     });
     setPlantillaSemanal(mapaBase);
 
-    // 2. Inicializar Excepciones por Fecha
     const mapaExcepciones = {};
-    listaDias.forEach(item => {
-      const existente = data?.find(r => r.fecha_especifica === item.fecha);
-      if (existente) {
-        mapaExcepciones[item.fecha] = existente;
+    data?.forEach(r => {
+      if (r.fecha_especifica) {
+        mapaExcepciones[r.fecha_especifica] = r;
       }
     });
     setExcepcionesFechas(mapaExcepciones);
@@ -114,60 +110,58 @@ export default function Disponibilidad({ usuarioId }) {
     setMensaje('');
 
     try {
-      // Limpiar registros previos del mes
       await supabase.from('agd_restricciones_disponibilidad')
         .delete()
         .eq('usuario_id', usuarioId)
         .eq('mes_periodo', mesSeleccionado);
 
-      // Guardar plantilla base semanal
-      const payloadBase = DIAS_SEMANA_GENERICOS.map(dia => {
-        const item = plantillaSemanal[dia];
-        return {
-          usuario_id: usuarioId,
-          mes_periodo: mesSeleccionado,
-          dia_semana: dia,
-          fecha_especifica: null,
-          bloqueado_todo_el_dia: item.bloqueado_todo_el_dia,
-          tramo_1_inicio: item.tramo_1_inicio || null,
-          tramo_1_fin: item.tramo_1_fin || null,
-          tramo_2_inicio: item.tramo_2_inicio || null,
-          tramo_2_fin: item.tramo_2_fin || null,
-          tramo_3_inicio: item.tramo_3_inicio || null,
-          tramo_3_fin: item.tramo_3_fin || null,
-          tramo_4_inicio: item.tramo_4_inicio || null,
-          tramo_4_fin: item.tramo_4_fin || null,
-        };
+      let payloadFinal = [];
+
+      diasDelMes.forEach(d => {
+        const excepcion = excepcionesFechas[d.fecha];
+
+        if (excepcion) {
+          payloadFinal.push({
+            usuario_id: usuarioId,
+            mes_periodo: mesSeleccionado,
+            dia_semana: d.nombreDia,
+            fecha_especifica: d.fecha,
+            bloqueado_todo_el_dia: excepcion.bloqueado_todo_el_dia,
+            tramo_1_inicio: excepcion.tramo_1_inicio || null,
+            tramo_1_fin: excepcion.tramo_1_fin || null,
+            tramo_2_inicio: excepcion.tramo_2_inicio || null,
+            tramo_2_fin: excepcion.tramo_2_fin || null,
+            tramo_3_inicio: excepcion.tramo_3_inicio || null,
+            tramo_3_fin: excepcion.tramo_3_fin || null,
+            tramo_4_inicio: excepcion.tramo_4_inicio || null,
+            tramo_4_fin: excepcion.tramo_4_fin || null,
+          });
+        } else {
+          const patron = plantillaSemanal[d.nombreDia] || {};
+          payloadFinal.push({
+            usuario_id: usuarioId,
+            mes_periodo: mesSeleccionado,
+            dia_semana: d.nombreDia,
+            fecha_especifica: d.fecha, // ¡clave para que el calendario lo lea por fecha exacta!
+            bloqueado_todo_el_dia: patron.bloqueado_todo_el_dia,
+            tramo_1_inicio: patron.tramo_1_inicio || null,
+            tramo_1_fin: patron.tramo_1_fin || null,
+            tramo_2_inicio: patron.tramo_2_inicio || null,
+            tramo_2_fin: patron.tramo_2_fin || null,
+            tramo_3_inicio: patron.tramo_3_inicio || null,
+            tramo_3_fin: patron.tramo_3_fin || null,
+            tramo_4_inicio: patron.tramo_4_inicio || null,
+            tramo_4_fin: patron.tramo_4_fin || null,
+          });
+        }
       });
 
-      // Guardar excepciones puntuales de fechas
-      const payloadExcepciones = Object.keys(excepcionesFechas).map(fecha => {
-        const item = excepcionesFechas[fecha];
-        const diaInfo = diasDelMes.find(d => d.fecha === fecha);
-        return {
-          usuario_id: usuarioId,
-          mes_periodo: mesSeleccionado,
-          dia_semana: diaInfo?.nombreDia || 'Lunes',
-          fecha_especifica: fecha,
-          bloqueado_todo_el_dia: item.bloqueado_todo_el_dia,
-          tramo_1_inicio: item.tramo_1_inicio || null,
-          tramo_1_fin: item.tramo_1_fin || null,
-          tramo_2_inicio: item.tramo_2_inicio || null,
-          tramo_2_fin: item.tramo_2_fin || null,
-          tramo_3_inicio: item.tramo_3_inicio || null,
-          tramo_3_fin: item.tramo_3_fin || null,
-          tramo_4_inicio: item.tramo_4_inicio || null,
-          tramo_4_fin: item.tramo_4_fin || null,
-        };
-      });
-
-      const { error } = await supabase.from('agd_restricciones_disponibilidad')
-        .insert([...payloadBase, ...payloadExcepciones]);
+      const { error } = await supabase.from('agd_restricciones_disponibilidad').insert(payloadFinal);
 
       if (error) {
         setMensaje('Error al guardar: ' + error.message);
       } else {
-        setMensaje('¡Configuración guardada correctamente!');
+        setMensaje('¡Configuración guardada correctamente para el calendario!');
         setTimeout(() => setMensaje(''), 4000);
       }
     } catch (err) {

@@ -59,12 +59,13 @@ export default function Calendario({ usuarioId }) {
       .eq('rol', 'Empresario');
     if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
-    // 2. Cargar Restricciones del Mes (Plantilla base y fechas específicas)
+    // 2. Cargar Restricciones del Mes desde Supabase
     const { data: dataRest } = await supabase
       .from('agd_restricciones_disponibilidad')
       .select('*')
       .eq('usuario_id', usuarioId)
       .eq('mes_periodo', mesStr);
+    
     if (dataRest) setRestricciones(dataRest);
 
     // 3. Cargar Citas Agendadas
@@ -169,30 +170,38 @@ export default function Calendario({ usuarioId }) {
 
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
-  // Validar disponibilidad cruzando fecha específica o plantilla semanal
-  const obtenerRestriccionDia = (fecha, nombreDia) => {
-    // 1. Buscar si hay excepción específica para la fecha concreta
-    const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
-    if (restriccionFecha) return restriccionFecha;
-
-    // 2. Si no hay excepción, buscar la plantilla base del día de la semana
-    const restriccionBase = restricciones.find(r => r.dia_semana === nombreDia && !r.fecha_especifica);
-    return restriccionBase;
-  };
-
+  // Validación robusta cruzando excepción de fecha exacta o plantilla semanal base
   const esDisponible = (fecha, nombreDia, hora) => {
-    const rest = obtenerRestriccionDia(fecha, nombreDia);
-    if (!rest || rest.bloqueado_todo_el_dia) return false;
+    // 1. Buscar si existe una excepción puntual guardada para esta fecha específica
+    const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
+    
+    let restAConsultar = restriccionFecha;
 
-    // Comprobar si la hora cae dentro de alguno de los 4 tramos de restricción
-    const enRestriccion = [
-      { i: rest.tramo_1_inicio, f: rest.tramo_1_fin },
-      { i: rest.tramo_2_inicio, f: rest.tramo_2_fin },
-      { i: rest.tramo_3_inicio, f: rest.tramo_3_fin },
-      { i: rest.tramo_4_inicio, f: rest.tramo_4_fin },
-    ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
+    // 2. Si no hay excepción específica, usar la plantilla semanal base del día correspondiente
+    if (!restAConsultar) {
+      restAConsultar = restricciones.find(r => r.dia_semana === nombreDia && (!r.fecha_especifica || r.fecha_especifica === ''));
+    }
 
-    return !enRestriccion;
+    // Si el día está marcado como bloqueado por completo
+    if (restAConsultar && restAConsultar.bloqueado_todo_el_dia) {
+      return false;
+    }
+
+    // Si hay restricciones configuradas, verificar los tramos de NO disponibilidad
+    if (restAConsultar) {
+      const enRestriccion = [
+        { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
+        { i: restAConsultar.tramo_2_inicio, f: restAConsultar.tramo_2_fin },
+        { i: restAConsultar.tramo_3_inicio, f: restAConsultar.tramo_3_fin },
+        { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
+      ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
+
+      // Si cae dentro de un tramo restringido, NO está disponible
+      if (enRestriccion) return false;
+    }
+
+    // Por defecto, si no hay restricciones que lo bloqueen, el horario está disponible
+    return true;
   };
 
   return (
@@ -252,7 +261,7 @@ export default function Calendario({ usuarioId }) {
                     >
                       {citaEncontrada ? (
                         <span style={estilos.textoCita}>
-                          {citaEncontrada.estado.toUpperCase()[:3]}: {citaEncontrada.tipo_sesion === 'Grupal' ? citaEncontrada.nombre_grupo : 'Ind.'}
+                          {citaEncontrada.estado.toUpperCase().substring(0, 3)}: {citaEncontrada.tipo_sesion === 'Grupal' ? citaEncontrada.nombre_grupo : 'Ind.'}
                         </span>
                       ) : disponible ? (
                         <span style={estilos.textoDisponible}>Libre</span>

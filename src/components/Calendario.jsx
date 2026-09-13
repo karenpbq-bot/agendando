@@ -28,17 +28,9 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
+  // Generar los días del mes inmediatamente cada vez que cambia el mes seleccionado
   useEffect(() => {
-    if (usuarioId && mesSeleccionado) {
-      generarDiasDelMesYCargar(mesSeleccionado);
-    }
-  }, [usuarioId, mesSeleccionado]);
-
-  const generarDiasDelMesYCargar = async (mesStr) => {
-    const partes = mesStr.split('-');
-    const anio = parseInt(partes[0], 10);
-    const mes = parseInt(partes[1], 10);
-    
+    const [anio, mes] = mesSeleccionado.split('-').map(Number);
     const ultimoDia = new Date(anio, mes, 0).getDate();
     const listaDias = [];
     
@@ -54,29 +46,41 @@ export default function Calendario({ usuarioId }) {
       });
     }
     setDiasSemanaMes(listaDias);
+  }, [mesSeleccionado]);
 
-    // 1. Cargar Empresarios
-    const { data: dataEmpresarios } = await supabase
-      .from('usuarios')
-      .select('id, nombre_completo, telefono, email, rol')
-      .eq('rol', 'Empresario');
-    if (dataEmpresarios) setEmpresarios(dataEmpresarios);
+  // Cargar datos de Supabase de manera independiente
+  useEffect(() => {
+    if (usuarioId) {
+      cargarDatosSupabase();
+    }
+  }, [usuarioId, mesSeleccionado]);
 
-    // 2. Cargar Restricciones del Mes desde Supabase
-    const { data: dataRest } = await supabase
-      .from('agd_restricciones_disponibilidad')
-      .select('*')
-      .eq('usuario_id', usuarioId)
-      .eq('mes_periodo', mesStr);
-    
-    if (dataRest) setRestricciones(dataRest);
+  const cargarDatosSupabase = async () => {
+    try {
+      // 1. Cargar Empresarios
+      const { data: dataEmpresarios } = await supabase
+        .from('usuarios')
+        .select('id, nombre_completo, telefono, email, rol')
+        .eq('rol', 'Empresario');
+      if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
-    // 3. Cargar Citas Agendadas
-    const { data: dataCitas } = await supabase
-      .from('agd_citas')
-      .select('*, usuarios(nombre_completo, telefono, email)')
-      .eq('chair_id', usuarioId);
-    if (dataCitas) setCitas(dataCitas);
+      // 2. Cargar Restricciones del Mes
+      const { data: dataRest } = await supabase
+        .from('agd_restricciones_disponibilidad')
+        .select('*')
+        .eq('usuario_id', usuarioId)
+        .eq('mes_periodo', mesSeleccionado);
+      if (dataRest) setRestricciones(dataRest);
+
+      // 3. Cargar Citas Agendadas
+      const { data: dataCitas } = await supabase
+        .from('agd_citas')
+        .select('*, usuarios(nombre_completo, telefono, email)')
+        .eq('chair_id', usuarioId);
+      if (dataCitas) setCitas(dataCitas);
+    } catch (err) {
+      console.error('Error cargando datos de Supabase:', err);
+    }
   };
 
   const abrirModalParaCelda = (dia, hora, citaEncontrada = null) => {
@@ -159,7 +163,7 @@ export default function Calendario({ usuarioId }) {
       }
 
       setModalAbierto(false);
-      generarDiasDelMesYCargar(mesSeleccionado);
+      cargarDatosSupabase();
       
       if (telefonoDestino && estadoCita !== 'cancelado') {
         const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado en estado *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom}. Por favor, confírmanos tu asistencia.`);
@@ -174,6 +178,7 @@ export default function Calendario({ usuarioId }) {
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
   const esDisponible = (fecha, nombreDia, hora) => {
+    // Buscar excepción específica de fecha o plantilla base
     const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
     let restAConsultar = restriccionFecha;
 
@@ -181,22 +186,23 @@ export default function Calendario({ usuarioId }) {
       restAConsultar = restricciones.find(r => r.dia_semana === nombreDia && (!r.fecha_especifica || r.fecha_especifica === ''));
     }
 
-    if (restAConsultar && restAConsultar.bloqueado_todo_el_dia) {
+    // Por defecto, si es fin de semana y no hay configuración, bloquear; si es lunes a viernes, libre
+    if (!restAConsultar) {
+      return nombreDia !== 'Sábado' && nombreDia !== 'Domingo';
+    }
+
+    if (restAConsultar.bloqueado_todo_el_dia) {
       return false;
     }
 
-    if (restAConsultar) {
-      const enRestriccion = [
-        { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
-        { i: restAConsultar.tramo_2_inicio, f: restAConsultar.tramo_2_fin },
-        { i: restAConsultar.tramo_3_inicio, f: restAConsultar.tramo_3_fin },
-        { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
-      ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
+    const enRestriccion = [
+      { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
+      { i: restAConsultar.tramo_2_inicio, f: restAConsultar.tramo_2_fin },
+      { i: restAConsultar.tramo_3_inicio, f: restAConsultar.tramo_3_fin },
+      { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
+    ].some(t => t.i && t.f && hora >= t.i && hora < t.f);
 
-      if (enRestriccion) return false;
-    }
-
-    return true;
+    return !enRestriccion;
   };
 
   return (

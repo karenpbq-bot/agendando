@@ -110,6 +110,7 @@ export default function Disponibilidad({ usuarioId }) {
     setMensaje('');
 
     try {
+      // 1. Limpiar registros previos del mes para evitar duplicados
       await supabase.from('agd_restricciones_disponibilidad')
         .delete()
         .eq('usuario_id', usuarioId)
@@ -117,10 +118,12 @@ export default function Disponibilidad({ usuarioId }) {
 
       let payloadFinal = [];
 
+      // 2. Mapear cada día del mes aplicando la Plantilla Base o sus Excepciones
       diasDelMes.forEach(d => {
         const excepcion = excepcionesFechas[d.fecha];
 
         if (excepcion) {
+          // Si tiene una excepción puntual grabada en la pestaña 2, se respeta
           payloadFinal.push({
             usuario_id: usuarioId,
             mes_periodo: mesSeleccionado,
@@ -137,31 +140,33 @@ export default function Disponibilidad({ usuarioId }) {
             tramo_4_fin: excepcion.tramo_4_fin || null,
           });
         } else {
-          const patron = plantillaSemanal[d.nombreDia] || {};
+          // Si no hay excepción, tomamos la configuración de la Plantilla Base Semanal (Pestaña 1) según el nombre del día
+          const patronBase = plantillaSemanal[d.nombreDia] || {};
           payloadFinal.push({
             usuario_id: usuarioId,
             mes_periodo: mesSeleccionado,
             dia_semana: d.nombreDia,
-            fecha_especifica: d.fecha, // ¡clave para que el calendario lo lea por fecha exacta!
-            bloqueado_todo_el_dia: patron.bloqueado_todo_el_dia,
-            tramo_1_inicio: patron.tramo_1_inicio || null,
-            tramo_1_fin: patron.tramo_1_fin || null,
-            tramo_2_inicio: patron.tramo_2_inicio || null,
-            tramo_2_fin: patron.tramo_2_fin || null,
-            tramo_3_inicio: patron.tramo_3_inicio || null,
-            tramo_3_fin: patron.tramo_3_fin || null,
-            tramo_4_inicio: patron.tramo_4_inicio || null,
-            tramo_4_fin: patron.tramo_4_fin || null,
+            fecha_especifica: d.fecha, // Grabado con fecha exacta para que el Calendario lo lea perfecto
+            bloqueado_todo_el_dia: patronBase.bloqueado_todo_el_dia || false,
+            tramo_1_inicio: patronBase.tramo_1_inicio || null,
+            tramo_1_fin: patronBase.tramo_1_fin || null,
+            tramo_2_inicio: patronBase.tramo_2_inicio || null,
+            tramo_2_fin: patronBase.tramo_2_fin || null,
+            tramo_3_inicio: patronBase.tramo_3_inicio || null,
+            tramo_3_fin: patronBase.tramo_3_fin || null,
+            tramo_4_inicio: patronBase.tramo_4_inicio || null,
+            tramo_4_fin: patronBase.tramo_4_fin || null,
           });
         }
       });
 
+      // 3. Insertar el paquete completo a Supabase
       const { error } = await supabase.from('agd_restricciones_disponibilidad').insert(payloadFinal);
 
       if (error) {
         setMensaje('Error al guardar: ' + error.message);
       } else {
-        setMensaje('¡Configuración guardada correctamente para el calendario!');
+        setMensaje('¡Configuración guardada y sincronizada con el calendario con éxito!');
         setTimeout(() => setMensaje(''), 4000);
       }
     } catch (err) {

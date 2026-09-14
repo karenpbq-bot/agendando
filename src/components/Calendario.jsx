@@ -89,7 +89,7 @@ export default function Calendario({ usuarioId }) {
         );
       }
 
-      // Consultar restricciones usando mes_periodo
+      // Consulta de restricciones usando mes_periodo
       const { data: dataRest, error: errorRest } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
@@ -97,6 +97,10 @@ export default function Calendario({ usuarioId }) {
         .in('mes_periodo', mesesFiltro);
 
       if (errorRest) console.error('Error cargando restricciones:', errorRest);
+
+      // Auditoría exacta de los datos obtenidos de Supabase
+      console.log('DATOS RECIBIDOS DE SUPABASE:', { usuarioId, mesesFiltro, dataRest });
+
       if (dataRest) {
         setRestricciones(dataRest);
       }

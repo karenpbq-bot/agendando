@@ -81,14 +81,21 @@ export default function Calendario({ usuarioId }) {
         const fechaInicioRango = diasSemanaMes[0].fecha;
         const fechaFinRango = diasSemanaMes[diasSemanaMes.length - 1].fecha;
 
-        const { data: dataRest } = await supabase
+        // Forzamos el tipo de usuarioId según tu base de datos (si es número usa Number, si es texto déjalo así)
+        const idUsuarioLimpio = Number(usuarioId) || usuarioId;
+
+        const { data: dataRest, error: errorRest } = await supabase
           .from('agd_restricciones_disponibilidad')
           .select('*')
-          .eq('usuario_id', usuarioId)
+          .eq('usuario_id', idUsuarioLimpio)
           .gte('fecha_especifica', fechaInicioRango)
           .lte('fecha_especifica', fechaFinRango);
 
-        if (dataRest) setRestricciones(dataRest);
+        if (errorRest) console.error('Error en restricciones:', errorRest.message);
+        if (dataRest) {
+          console.log('Restricciones cargadas desde BD:', dataRest); // Para auditar en consola (F12)
+          setRestricciones(dataRest);
+        }
       }
 
       const { data: dataCitas } = await supabase
@@ -99,6 +106,52 @@ export default function Calendario({ usuarioId }) {
     } catch (err) {
       console.error('Error cargando datos de Supabase:', err);
     }
+  };
+
+  const esDisponible = (fecha, hora) => {
+    // Buscamos comparando los primeros 10 caracteres (YYYY-MM-DD) para evitar problemas de formato de fecha
+    const restriccionDia = restricciones.find(r => {
+      if (!r.fecha_especifica) return false;
+      return r.fecha_especifica.substring(0, 10) === fecha;
+    });
+
+    // Si el día entero está marcado como bloqueado, no está disponible (gris)
+    if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
+      return false;
+    }
+
+    // Si no hay registro de restricciones para este día, por defecto se asume disponible
+    if (!restriccionDia) return true;
+
+    const horaCelda = hora.trim();
+    const tramos = [
+      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
+      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
+      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
+      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
+    ];
+
+    let tieneTramosValidos = false;
+    let estaDentroDeTramo = false;
+
+    for (let t of tramos) {
+      if (t.i && t.f) {
+        tieneTramosValidos = true;
+        const inicio = t.i.substring(0, 5);
+        const fin = t.f.substring(0, 5);
+
+        if (horaCelda >= inicio && horaCelda < fin) {
+          estaDentroDeTramo = true;
+          break;
+        }
+      }
+    }
+
+    if (tieneTramosValidos) {
+      return estaDentroDeTramo;
+    }
+
+    return true;
   };
 
   const esDisponible = (fecha, hora) => {

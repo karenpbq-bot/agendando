@@ -13,9 +13,10 @@ export default function Calendario({ usuarioId }) {
   const [citas, setCitas] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
   
-  // Estado para los límites de jornada del Chair
   const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30' });
-  const [horasDelDia, setHorasDelDia] = useState([]);
+  
+  // Generamos las 24 horas del día (de 00:00 a 23:00) para el scroll vertical completo
+  const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
@@ -68,34 +69,6 @@ export default function Calendario({ usuarioId }) {
     setDiasSemanaMes(listaDiasTotal);
   }, [mesSeleccionado, vistaEscala]);
 
-  // Generar dinámicamente las horas del día basadas estrictamente en la jornada del Chair
-  useEffect(() => {
-    const aMinutos = (strHora) => {
-      if (!strHora) return 510; // Default 08:30
-      const partes = strHora.split(':');
-      return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
-    };
-
-    const minInicio = aMinutos(jornadaChair.inicio);
-    const minFin = aMinutos(jornadaChair.fin);
-
-    // Creamos bloques de 1 hora exactos desde la hora de inicio de la jornada hasta la de fin
-    let listaHoras = [];
-    let currentMin = Math.floor(minInicio / 60) * 60; // Redondea a la hora en punto anterior (ej. 08:30 -> 08:00 o mantén el inicio exacto)
-    
-    // Si prefieres que la fila empiece exactamente en la hora de inicio (ej. 08:30):
-    currentMin = minInicio;
-
-    while (currentMin < minFin) {
-      const h = Math.floor(currentMin / 60);
-      const m = currentMin % 60;
-      listaHoras.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-      currentMin += 60; // Incrementos de 1 hora
-    }
-    
-    setHorasDelDia(listaHoras);
-  }, [jornadaChair]);
-  
   useEffect(() => {
     if (usuarioId && diasSemanaMes.length > 0) {
       cargarDatosSupabase();
@@ -163,28 +136,24 @@ export default function Calendario({ usuarioId }) {
     const minCeldaInicio = aMinutos(hora);
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
-    const minCeldaFin = minCeldaInicio + 60; // Bloque de 1 hora
+    const minCeldaFin = minCeldaInicio + 60;
 
-    // 1. Si la celda está completamente fuera del rango de la jornada global -> Bloqueado (Gris)
+    // 1. Si la celda está fuera del rango global configurado en Jornada y País -> Bloqueado (Gris)
     if (minCeldaInicio < minJornadaIni || minCeldaInicio >= minJornadaFin) {
       return false; 
     }
 
-    // 2. Buscamos si hay restricciones específicas para este día
     const restriccionDia = restricciones.find(r => {
       if (!r.fecha_especifica) return false;
       return r.fecha_especifica.substring(0, 10) === fecha;
     });
 
-    // Si el día entero está bloqueado
     if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
       return false;
     }
 
-    // Si no hay restricciones ni tramos guardados para este día -> Disponible libre (Amarillo)
     if (!restriccionDia) return true;
 
-    // Tramos de restricciones configurados (almuerzos, etc.)
     const tramosRestringidos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
       { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
@@ -192,7 +161,6 @@ export default function Calendario({ usuarioId }) {
       { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
     ];
 
-    // 3. Verificamos si la celda choca con algún tramo restringido
     for (let t of tramosRestringidos) {
       const minInicioTramo = aMinutos(t.i);
       const minFinTramo = aMinutos(t.f);
@@ -204,7 +172,6 @@ export default function Calendario({ usuarioId }) {
       }
     }
 
-    // 4. Si pasó todas las validaciones -> Libre y Disponible (Amarillo)
     return true;
   };
 
@@ -360,6 +327,7 @@ export default function Calendario({ usuarioId }) {
         <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
       </div>
 
+      {/* Contenedor con Scroll Vertical para las 24 horas */}
       <div style={estilos.tablaContainer}>
         <table style={{ ...estilos.tabla, fontSize: estilosEscala.fontSize }}>
           <thead>
@@ -544,10 +512,11 @@ const estilos = {
   btnZoom: { padding: '6px 10px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
-  tablaContainer: { overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
+  // Contenedor con altura fija y scroll vertical para ver las 24 horas cómodamente
+  tablaContainer: { maxHeight: '550px', overflowY: 'auto', overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
   tabla: { width: '100%', borderCollapse: 'collapse' },
-  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px' },
-  thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center' },
+  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px', position: 'sticky', top: 0, zIndex: 2 },
+  thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2 },
   numDia: { fontWeight: 'bold' },
   tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
   tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE' },

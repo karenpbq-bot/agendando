@@ -135,18 +135,18 @@ export default function Calendario({ usuarioId }) {
     // 2. Si no hay registro para este día, por defecto está disponible
     if (!restriccionDia) return true;
 
-    // Convierte "HH:MM:SS" o "HH:MM" a segundos totales respetando hasta el último segundo
-    const aSegundos = (strHora) => {
+    // Convierte "HH:MM:SS" o "HH:MM" a minutos totales del día
+    const aMinutos = (strHora) => {
       if (!strHora) return null;
       const partes = strHora.split(':');
       const h = parseInt(partes[0] || 0, 10);
       const m = parseInt(partes[1] || 0, 10);
-      const s = parseInt(partes[2] || 0, 10);
-      return h * 3600 + m * 60 + s;
+      return h * 60 + m;
     };
 
-    const segundosCelda = aSegundos(hora);
-    if (segundosCelda === null) return true;
+    const minutosCeldaInicio = aMinutos(hora);
+    if (minutosCeldaInicio === null) return true;
+    const minutosCeldaFin = minutosCeldaInicio + 60; // Cada celda del calendario dura 1 hora
 
     const tramos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
@@ -159,13 +159,14 @@ export default function Calendario({ usuarioId }) {
     let estaDentroDeTramoValido = false;
 
     for (let t of tramos) {
-      const secInicio = aSegundos(t.i);
-      const secFin = aSegundos(t.f);
+      const minInicioTramo = aMinutos(t.i);
+      const minFinTramo = aMinutos(t.f);
 
-      if (secInicio !== null && secFin !== null) {
+      if (minInicioTramo !== null && minFinTramo !== null) {
         tieneTramosValidos = true;
-        // Evaluación estricta a nivel de segundos
-        if (segundosCelda >= secInicio && segundosCelda < secFin) {
+        
+        // Verificamos si el bloque de 1 hora de la celda se cruza con el tramo laboral configurado
+        if (minutosCeldaInicio < minFinTramo && minutosCeldaFin > minInicioTramo) {
           estaDentroDeTramoValido = true;
           break;
         }

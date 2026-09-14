@@ -81,7 +81,7 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
               isOpen={bloqueAbierto === 2} 
               onClick={() => alternarBloque(2)}
             >
-              <Calendario rolUsuario={rol} />
+              <Calendario usuarioId={usuarioData?.id} />
             </BloqueDesplegable>
           )}
 

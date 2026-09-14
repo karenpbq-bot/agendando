@@ -13,15 +13,13 @@ export default function Calendario({ usuarioId }) {
   const [citas, setCitas] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
   
-  // Estado para la jornada y parámetros de sesión del Chair
-  const [jornadaChair, setJornadaChair] = useState({ 
-    inicio: '08:30', 
-    fin: '22:30',
-    duracionSesion: 60,
-    buffer: 15
-  });
-
-  const [horasDelDia, setHorasDelDia] = useState([]);
+  const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30', duracionSesion: 60 });
+  
+  // Eje de la izquierda: Muestra estrictamente las 24 horas en punto (00:00 a 23:00)
+  const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+  
+  // Sub-bloques de 15 minutos para cada hora (00, 15, 30, 45)
+  const subBloquesMinutos = [0, 15, 30, 45];
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
@@ -74,48 +72,6 @@ export default function Calendario({ usuarioId }) {
     setDiasSemanaMes(listaDiasTotal);
   }, [mesSeleccionado, vistaEscala]);
 
-  // Generar dinámicamente las filas de tiempo basadas en la duración de la sesión + buffer
-  useEffect(() => {
-    const aMinutos = (strHora) => {
-      if (!strHora) return 510; // Default 08:30
-      const partes = strHora.split(':');
-      return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
-    };
-
-    const minInicioJornada = aMinutos(jornadaChair.inicio);
-    const minFinJornada = aMinutos(jornadaChair.fin);
-    
-    // Intervalo total de cada bloque = Duración de sesión + Buffer (mínimo 15 min para evitar bucles infinitos)
-    const intervaloMinutos = Number(jornadaChair.duracionSesion) + Number(jornadaChair.buffer);
-    const paso = intervaloMinutos > 0 ? intervaloMinutos : 60;
-
-    let listaFranjas = [];
-    let currentMin = minInicioJornada;
-
-    while (currentMin < minFinJornada) {
-      const hIni = Math.floor(currentMin / 60);
-      const mIni = currentMin % 60;
-      
-      const finBloqueMin = currentMin + Number(jornadaChair.duracionSesion);
-      const hFin = Math.floor(finBloqueMin / 60);
-      const mFin = finBloqueMin % 60;
-
-      const horaInicioStr = `${String(hIni).padStart(2, '0')}:${String(mIni).padStart(2, '0')}`;
-      const horaFinStr = `${String(hFin).padStart(2, '0')}:${String(mFin).padStart(2, '0')}`;
-
-      listaFranjas.push({
-        etiqueta: `${horaInicioStr} - ${horaFinStr}`,
-        minInicio: currentMin,
-        minFin: finBloqueMin,
-        horaPuraInicio: horaInicioStr
-      });
-
-      currentMin += paso;
-    }
-
-    setHorasDelDia(listaFranjas);
-  }, [jornadaChair]);
-
   useEffect(() => {
     if (usuarioId && diasSemanaMes.length > 0) {
       cargarDatosSupabase();
@@ -126,7 +82,7 @@ export default function Calendario({ usuarioId }) {
     try {
       const { data: configData } = await supabase
         .from('agd_configuracion_chair')
-        .select('jornada_inicio, jornada_fin, duracion_sesion_minutos, tiempo_buffer_minutos')
+        .select('jornada_inicio, jornada_fin, duracion_sesion_minutos')
         .eq('usuario_id', usuarioId)
         .single();
 
@@ -134,8 +90,7 @@ export default function Calendario({ usuarioId }) {
         setJornadaChair({
           inicio: configData.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30',
           fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30',
-          duracionSesion: configData.duracion_sesion_minutos || 60,
-          buffer: configData.tiempo_buffer_minutos || 15
+          duracionSesion: configData.duracion_sesion_minutos || 60
         });
       }
 
@@ -175,7 +130,8 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  const esDisponible = (fecha, franja) => {
+  // Validación de disponibilidad por cada segmento exacto de 15 minutos
+  const esDisponibleMinutos = (fecha, minInicioSegmento) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
       const partes = strHora.split(':');
@@ -184,9 +140,10 @@ export default function Calendario({ usuarioId }) {
 
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
+    const minFinSegmento = minInicioSegmento + 15; // Cada cajita interna dura 15 minutos
 
-    // 1. Si el bloque está fuera de la jornada global -> Bloqueado
-    if (franja.minInicio < minJornadaIni || franja.minFin > minJornadaFin) {
+    // 1. Si el segmento de 15 min está fuera de la jornada global -> Bloqueado
+    if (minInicioSegmento < minJornadaIni || minInicioSegmento >= minJornadaFin) {
       return false; 
     }
 
@@ -213,9 +170,8 @@ export default function Calendario({ usuarioId }) {
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
-        // Validación de cruce con la restricción
-        if (franja.minInicio < minFinTramo && franja.minFin > minInicioTramo) {
-          return false; // Cae en restricción -> Bloqueado (Gris)
+        if (minInicioSegmento < minFinTramo && minFinSegmento > minInicioTramo) {
+          return false; // Cae en restricción de minutos -> Bloqueado (Gris)
         }
       }
     }
@@ -223,8 +179,12 @@ export default function Calendario({ usuarioId }) {
     return true;
   };
 
-  const abrirModalParaFranja = (dia, franja, citaEncontrada = null) => {
-    const disponible = esDisponible(dia.fecha, franja);
+  const abrirModalParaSegmento = (dia, minInicioSegmento, citaEncontrada = null) => {
+    const h = Math.floor(minInicioSegmento / 60);
+    const m = minInicioSegmento % 60;
+    const horaStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+    const disponible = esDisponibleMinutos(dia.fecha, minInicioSegmento);
     if (!disponible && !citaEncontrada) return;
 
     setDiaSeleccionado(dia);
@@ -234,17 +194,16 @@ export default function Calendario({ usuarioId }) {
       setTipoSession(citaEncontrada.tipo_sesion || 'Individual');
       setEmpresarioId(citaEncontrada.empresario_id || '');
       setNombreGrupo(citaEncontrada.nombre_grupo || '');
-      setHoraInicio(citaEncontrada.hora_inicio || franja.horaPuraInicio);
+      setHoraInicio(citaEncontrada.hora_inicio || horaStr);
       setHoraFin(citaEncontrada.hora_fin || '');
       setLinkZoom(citaEncontrada.link_zoom || '');
       setEstadoCita(citaEncontrada.estado || 'confirmado');
     } else {
       setCitaExistenteId(null);
-      setHoraInicio(franja.horaPuraInicio);
+      setHoraInicio(horaStr);
       
-      // Calculamos hora fin basada en la duración de la sesión configurada
-      const [h, m] = franja.horaPuraInicio.split(':').map(Number);
-      const totalMinFin = h * 60 + m + Number(jornadaChair.duracionSesion);
+      // Hora fin calculada según la duración de sesión configurada
+      const totalMinFin = minInicioSegmento + Number(jornadaChair.duracionSesion);
       const hFinCalc = Math.floor(totalMinFin / 60);
       const mFinCalc = totalMinFin % 60;
       setHoraFin(`${String(hFinCalc).padStart(2, '0')}:${String(mFinCalc).padStart(2, '0')}`);
@@ -336,8 +295,7 @@ export default function Calendario({ usuarioId }) {
 
   const estilosEscala = {
     fontSize: vistaEscala === 'trimestre' ? '0.4rem' : '0.65rem',
-    minWidth: vistaEscala === 'trimestre' ? '22px' : '55px',
-    height: vistaEscala === 'trimestre' ? '22px' : '35px'
+    minWidth: vistaEscala === 'trimestre' ? '22px' : '60px',
   };
 
   return (
@@ -381,11 +339,12 @@ export default function Calendario({ usuarioId }) {
         <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
       </div>
 
+      {/* Tabla con scroll vertical para las 24 horas y desglose de 15 minutos */}
       <div style={estilos.tablaContainer}>
         <table style={{ ...estilos.tabla, fontSize: estilosEscala.fontSize }}>
           <thead>
             <tr>
-              <th style={estilos.thHora}>Horario</th>
+              <th style={estilos.thHora}>Hora</th>
               {diasSemanaMes.map(d => (
                 <th key={d.fecha} style={{ ...estilos.thDia, minWidth: estilosEscala.minWidth }}>
                   {d.nombreDia.slice(0, 3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span>
@@ -394,55 +353,64 @@ export default function Calendario({ usuarioId }) {
             </tr>
           </thead>
           <tbody>
-            {horasDelDia.map(franja => {
-              const citaEncontradaGlobal = (fecha) => {
-                return citas.find(c => {
-                  if (c.fecha_cita !== fecha) return false;
-                  // Comparamos traslape exacto de minutos con la cita
-                  const [hIniC] = c.hora_inicio.split(':').map(Number);
-                  const [mIniC] = (c.hora_inicio.split(':')[1] || '0').split(':').map(Number);
-                  const minIniC = hIniC * 60 + mIniC;
-
-                  const [hFinC] = c.hora_fin.split(':').map(Number);
-                  const [mFinC] = (c.hora_fin.split(':')[1] || '0').split(':').map(Number);
-                  const minFinC = hFinC * 60 + mFinC;
-
-                  return franja.minInicio < minFinC && franja.minFin > minIniC;
-                });
-              };
+            {horasDelDia.map((horaBase, indexH) => {
+              const minutoBase = indexH * 60;
 
               return (
-                <tr key={franja.etiqueta}>
-                  <td style={estilos.tdHora}>{franja.etiqueta}</td>
+                <tr key={horaBase}>
+                  {/* Columna Izquierda: Limpia y fija en intervalos de 1 hora */}
+                  <td style={estilos.tdHora}>{horaBase}</td>
+
+                  {/* Columnas de Días: Seccionadas internamente en 4 bloques de 15 minutos */}
                   {diasSemanaMes.map(d => {
-                    const disponible = esDisponible(d.fecha, franja);
-                    const citaEncontrada = citaEncontradaGlobal(d.fecha);
-
-                    let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
-                    
-                    if (citaEncontrada) {
-                      if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
-                      else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
-                      else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
-                    } else if (disponible) {
-                      estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
-                      estiloCelda.cursor = 'pointer';
-                    } else {
-                      estiloCelda.backgroundColor = '#EAEAEA';
-                      estiloCelda.cursor = 'not-allowed';
-                    }
-
                     return (
-                      <td 
-                        key={d.fecha} 
-                        style={estiloCelda}
-                        onClick={() => abrirModalParaFranja(d, franja, citaEncontrada)}
-                      >
-                        {citaEncontrada ? (
-                          <span style={{ ...estilos.textoCita, fontSize: vistaEscala === 'trimestre' ? '0.35rem' : '0.50rem' }}>
-                            {citaEncontrada.estado.toUpperCase().substring(0, 3)}
-                          </span>
-                        ) : null}
+                      <td key={d.fecha} style={estilos.tdCeldaDiaGrande}>
+                        <div style={estilos.subBloquesGrid}>
+                          {subBloquesMinutos.map(mOffset => {
+                            const minInicioSegmento = minutoBase + mOffset;
+                            const disponible = esDisponibleMinutos(d.fecha, minInicioSegmento);
+
+                            // Búsqueda de cita que cruce este segmento de 15 min
+                            const citaEncontrada = citas.find(c => {
+                              if (c.fecha_cita !== d.fecha) return false;
+                              const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
+                              const minIniC = hIniC * 60 + (mIniC || 0);
+
+                              const [hFinC, mFinC] = c.hora_fin.split(':').map(Number);
+                              const minFinC = hFinC * 60 + (mFinC || 0);
+
+                              return minInicioSegmento < minFinC && (minInicioSegmento + 15) > minIniC;
+                            });
+
+                            let estiloSubCelda = { ...estilos.subCelda };
+                            if (citaEncontrada) {
+                              if (citaEncontrada.estado === 'reservado') estiloSubCelda.backgroundColor = '#FFE0B2';
+                              else if (citaEncontrada.estado === 'confirmado') estiloSubCelda.backgroundColor = '#D1F0EE';
+                              else if (citaEncontrada.estado === 'cancelado') estiloSubCelda.backgroundColor = '#FFCDD2';
+                            } else if (disponible) {
+                              estiloSubCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                              estiloSubCelda.cursor = 'pointer';
+                            } else {
+                              estiloSubCelda.backgroundColor = '#EAEAEA';
+                              estiloSubCelda.cursor = 'not-allowed';
+                            }
+
+                            return (
+                              <div
+                                key={mOffset}
+                                style={estiloSubCelda}
+                                onClick={() => abrirModalParaSegmento(d, minInicioSegmento, citaEncontrada)}
+                                title={`${String(Math.floor(minInicioSegmento/60)).padStart(2,'0')}:${String(minInicioSegmento%60).padStart(2,'0')}`}
+                              >
+                                {citaEncontrada && mOffset === 0 ? (
+                                  <span style={estilos.textoCita}>
+                                    {citaEncontrada.estado.toUpperCase().substring(0, 3)}
+                                  </span>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </td>
                     );
                   })}
@@ -583,14 +551,16 @@ const estilos = {
   btnZoom: { padding: '6px 10px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
-  tablaContainer: { maxHeight: '550px', overflowY: 'auto', overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
+  tablaContainer: { maxHeight: '600px', overflowY: 'auto', overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
   tabla: { width: '100%', borderCollapse: 'collapse' },
-  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '75px', position: 'sticky', top: 0, zIndex: 2 },
-  thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2 },
+  thHora: { padding: '8px 4px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '65px', position: 'sticky', top: 0, zIndex: 2 },
+  thDia: { padding: '8px 4px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2 },
   numDia: { fontWeight: 'bold' },
-  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.65rem' },
-  tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE' },
-  textoCita: { color: '#333', fontWeight: 'bold' },
+  tdHora: { padding: '4px', textAlign: 'center', borderBottom: '1px solid #DDD', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.7rem', verticalAlign: 'middle' },
+  tdCeldaDiaGrande: { padding: '0', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', verticalAlign: 'top' },
+  subBloquesGrid: { display: 'flex', flexDirection: 'column', width: '100%' },
+  subCelda: { height: '11px', borderBottom: '1px dotted #F0F0F0', boxSizing: 'border-box', width: '100%', cursor: 'pointer' },
+  textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.45rem', paddingLeft: '2px' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },
   modalTitulo: { fontSize: '1rem', color: '#333', marginBottom: '15px', textAlign: 'center' },

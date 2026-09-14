@@ -132,10 +132,10 @@ export default function Calendario({ usuarioId }) {
       return false;
     }
 
-    // 2. Si no hay registro para este día, por defecto está disponible
+    // 2. Si no hay registro de restricciones para este día, por defecto está disponible
     if (!restriccionDia) return true;
 
-    // Convierte "HH:MM:SS" o "HH:MM" a minutos totales del día
+    // Función para convertir "HH:MM:SS" o "HH:MM" a minutos totales desde medianoche
     const aMinutos = (strHora) => {
       if (!strHora) return null;
       const partes = strHora.split(':');
@@ -144,9 +144,9 @@ export default function Calendario({ usuarioId }) {
       return h * 60 + m;
     };
 
-    const minutosCeldaInicio = aMinutos(hora);
-    if (minutosCeldaInicio === null) return true;
-    const minutosCeldaFin = minutosCeldaInicio + 60; // Cada celda del calendario dura 1 hora
+    const minCeldaInicio = aMinutos(hora);
+    if (minCeldaInicio === null) return true;
+    const minCeldaFin = minCeldaInicio + 60; // Cada celda representa 1 hora de duración
 
     const tramos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
@@ -156,7 +156,7 @@ export default function Calendario({ usuarioId }) {
     ];
 
     let tieneTramosValidos = false;
-    let estaDentroDeTramoValido = false;
+    let estaDentroDeTramo = false;
 
     for (let t of tramos) {
       const minInicioTramo = aMinutos(t.i);
@@ -165,16 +165,17 @@ export default function Calendario({ usuarioId }) {
       if (minInicioTramo !== null && minFinTramo !== null) {
         tieneTramosValidos = true;
         
-        // Verificamos si el bloque de 1 hora de la celda se cruza con el tramo laboral configurado
-        if (minutosCeldaInicio < minFinTramo && minutosCeldaFin > minInicioTramo) {
-          estaDentroDeTramoValido = true;
+        // Verificamos si la hora de la celda se encuentra dentro del rango habilitado
+        if (minCeldaInicio >= minInicioTramo && minCeldaFin <= minFinTramo) {
+          estaDentroDeTramo = true;
           break;
         }
       }
     }
 
+    // Si el día tiene tramos configurados, solo está disponible si cayó dentro de ellos
     if (tieneTramosValidos) {
-      return estaDentroDeTramoValido;
+      return estaDentroDeTramo;
     }
 
     return true;

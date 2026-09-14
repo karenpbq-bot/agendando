@@ -15,10 +15,10 @@ export default function Calendario({ usuarioId }) {
   
   const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30', duracionSesion: 60 });
   
-  // Eje de la izquierda: Muestra estrictamente las 24 horas en punto (00:00 a 23:00)
+  // Eje izquierdo: Estrictamente las 24 horas en punto (00:00 a 23:00)
   const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
   
-  // Sub-bloques de 15 minutos para cada hora (00, 15, 30, 45)
+  // Sub-bloques internos de 15 minutos para cada hora (00, 15, 30, 45)
   const subBloquesMinutos = [0, 15, 30, 45];
 
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -130,7 +130,6 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // Validación de disponibilidad por cada segmento exacto de 15 minutos
   const esDisponibleMinutos = (fecha, minInicioSegmento) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
@@ -140,9 +139,9 @@ export default function Calendario({ usuarioId }) {
 
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
-    const minFinSegmento = minInicioSegmento + 15; // Cada cajita interna dura 15 minutos
+    const minFinSegmento = minInicioSegmento + 15;
 
-    // 1. Si el segmento de 15 min está fuera de la jornada global -> Bloqueado
+    // Fuera de la jornada global -> Bloqueado
     if (minInicioSegmento < minJornadaIni || minInicioSegmento >= minJornadaFin) {
       return false; 
     }
@@ -171,7 +170,7 @@ export default function Calendario({ usuarioId }) {
 
       if (minInicioTramo !== null && minFinTramo !== null) {
         if (minInicioSegmento < minFinTramo && minFinSegmento > minInicioTramo) {
-          return false; // Cae en restricción de minutos -> Bloqueado (Gris)
+          return false; 
         }
       }
     }
@@ -202,7 +201,6 @@ export default function Calendario({ usuarioId }) {
       setCitaExistenteId(null);
       setHoraInicio(horaStr);
       
-      // Hora fin calculada según la duración de sesión configurada
       const totalMinFin = minInicioSegmento + Number(jornadaChair.duracionSesion);
       const hFinCalc = Math.floor(totalMinFin / 60);
       const mFinCalc = totalMinFin % 60;
@@ -295,7 +293,7 @@ export default function Calendario({ usuarioId }) {
 
   const estilosEscala = {
     fontSize: vistaEscala === 'trimestre' ? '0.4rem' : '0.65rem',
-    minWidth: vistaEscala === 'trimestre' ? '22px' : '60px',
+    minWidth: vistaEscala === 'trimestre' ? '22px' : '55px',
   };
 
   return (
@@ -339,7 +337,6 @@ export default function Calendario({ usuarioId }) {
         <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
       </div>
 
-      {/* Tabla con scroll vertical para las 24 horas y desglose de 15 minutos */}
       <div style={estilos.tablaContainer}>
         <table style={{ ...estilos.tabla, fontSize: estilosEscala.fontSize }}>
           <thead>
@@ -358,10 +355,10 @@ export default function Calendario({ usuarioId }) {
 
               return (
                 <tr key={horaBase}>
-                  {/* Columna Izquierda: Limpia y fija en intervalos de 1 hora */}
+                  {/* Columna Izquierda: Limpia con horas en punto (00:00, 01:00...) */}
                   <td style={estilos.tdHora}>{horaBase}</td>
 
-                  {/* Columnas de Días: Seccionadas internamente en 4 bloques de 15 minutos */}
+                  {/* Columnas de Días: Divididas internamente en 4 bloques de 15 minutos */}
                   {diasSemanaMes.map(d => {
                     return (
                       <td key={d.fecha} style={estilos.tdCeldaDiaGrande}>
@@ -370,7 +367,6 @@ export default function Calendario({ usuarioId }) {
                             const minInicioSegmento = minutoBase + mOffset;
                             const disponible = esDisponibleMinutos(d.fecha, minInicioSegmento);
 
-                            // Búsqueda de cita que cruce este segmento de 15 min
                             const citaEncontrada = citas.find(c => {
                               if (c.fecha_cita !== d.fecha) return false;
                               const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
@@ -556,10 +552,10 @@ const estilos = {
   thHora: { padding: '8px 4px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '65px', position: 'sticky', top: 0, zIndex: 2 },
   thDia: { padding: '8px 4px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2 },
   numDia: { fontWeight: 'bold' },
-  tdHora: { padding: '4px', textAlign: 'center', borderBottom: '1px solid #DDD', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.7rem', verticalAlign: 'middle' },
+  tdHora: { padding: '8px 4px', textAlign: 'center', borderBottom: '1px solid #DDD', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', verticalAlign: 'middle' },
   tdCeldaDiaGrande: { padding: '0', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', verticalAlign: 'top' },
   subBloquesGrid: { display: 'flex', flexDirection: 'column', width: '100%' },
-  subCelda: { height: '11px', borderBottom: '1px dotted #F0F0F0', boxSizing: 'border-box', width: '100%', cursor: 'pointer' },
+  subCelda: { height: '14px', borderBottom: '1px dotted #F0F0F0', boxSizing: 'border-box', width: '100%', cursor: 'pointer' },
   textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.45rem', paddingLeft: '2px' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },

@@ -6,7 +6,7 @@ export default function Calendario({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
-  const [vistaEscala, setVistaEscala] = useState('mes'); // 'semana-zoom', 'mes', 'trimestre'
+  const [vistaEscala, setVistaEscala] = useState('mes'); // 'mes' o 'trimestre'
   
   const [diasSemanaMes, setDiasSemanaMes] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
@@ -30,7 +30,7 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
-  // Generador de días según la vista seleccionada (1 mes o ventana de 3 meses: anterior, actual, próximo)
+  // Generador de días según la vista seleccionada (1 mes o ventana de 3 meses)
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
     let mesesAProcesar = [mesSeleccionado];
@@ -135,11 +135,9 @@ export default function Calendario({ usuarioId }) {
     setModalAbierto(true);
   };
 
-  // Autocompletado inteligente de Zoom al seleccionar Empresario
   const seleccionarEmpresario = (idEmp) => {
     setEmpresarioId(idEmp);
     if (idEmp) {
-      // Buscar si el empresario ya tiene un link recurrente en citas previas
       const ultimaCitaEmpresario = citas.find(c => c.empresario_id == idEmp && c.link_zoom);
       if (ultimaCitaEmpresario) {
         setLinkZoom(ultimaCitaEmpresario.link_zoom);
@@ -237,38 +235,42 @@ export default function Calendario({ usuarioId }) {
     return true;
   };
 
-  // Tamaños dinámicos según el nivel de Zoom / Escala seleccionado
+  // Dinámica de escala para compactar o expandir según el botón de Zoom
   const estilosEscala = {
-    fontSize: vistaEscala === 'trimestre' ? '0.5rem' : '0.7rem',
-    minWidth: vistaEscala === 'trimestre' ? '28px' : '45px',
-    height: vistaEscala === 'trimestre' ? '26px' : '32px'
+    fontSize: vistaEscala === 'trimestre' ? '0.45rem' : '0.7rem',
+    minWidth: vistaEscala === 'trimestre' ? '22px' : '45px',
+    height: vistaEscala === 'trimestre' ? '22px' : '32px'
   };
 
   return (
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Calendario de Sesiones</h2>
       
+      {/* Controles superiores: Selector de Mes y Botones de Zoom / Escala */}
       <div style={estilos.controlesSuperiores}>
-        <input 
-          type="month" 
-          value={mesSeleccionado}
-          onChange={(e) => setMesSeleccionado(e.target.value)}
-          style={estilos.inputMes}
-        />
+        <div style={estilos.grupoMes}>
+          <label style={estilos.labelControl}>Mes Base:</label>
+          <input 
+            type="month" 
+            value={mesSeleccionado}
+            onChange={(e) => setMesSeleccionado(e.target.value)}
+            style={estilos.inputMes}
+          />
+        </div>
         <div style={estilos.zoomContainer}>
           <button 
             type="button" 
             onClick={() => setVistaEscala('mes')}
             style={{ ...estilos.btnZoom, backgroundColor: vistaEscala === 'mes' ? '#00A89F' : '#E0E0E0', color: vistaEscala === 'mes' ? '#FFF' : '#333' }}
           >
-            Mes
+            Mes (Estándar)
           </button>
           <button 
             type="button" 
             onClick={() => setVistaEscala('trimestre')}
             style={{ ...estilos.btnZoom, backgroundColor: vistaEscala === 'trimestre' ? '#00A89F' : '#E0E0E0', color: vistaEscala === 'trimestre' ? '#FFF' : '#333' }}
           >
-            Vista 3 Meses
+            Zoom 3 Meses
           </button>
         </div>
       </div>
@@ -318,7 +320,7 @@ export default function Calendario({ usuarioId }) {
                       onClick={() => abrirModalParaCelda(d, hora, citaEncontrada)}
                     >
                       {citaEncontrada ? (
-                        <span style={{ ...estilos.textoCita, fontSize: vistaEscala === 'trimestre' ? '0.45rem' : '0.55rem' }}>
+                        <span style={{ ...estilos.textoCita, fontSize: vistaEscala === 'trimestre' ? '0.35rem' : '0.55rem' }}>
                           {citaEncontrada.estado.toUpperCase().substring(0, 3)}
                         </span>
                       ) : null}
@@ -457,18 +459,20 @@ export default function Calendario({ usuarioId }) {
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
   titulo: { fontSize: '1.2rem', color: '#333333', marginBottom: '8px', textAlign: 'center' },
-  controlesSuperiores: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px' },
-  inputMes: { padding: '6px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem' },
+  controlesSuperiores: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px', flexWrap: 'wrap', backgroundColor: '#FFF', padding: '8px', borderRadius: '8px', border: '1px solid #EAEAEA' },
+  grupoMes: { display: 'flex', alignItems: 'center', gap: '6px' },
+  labelControl: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
+  inputMes: { padding: '6px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem' },
   zoomContainer: { display: 'flex', gap: '4px' },
   btnZoom: { padding: '6px 10px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
   tablaContainer: { overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
   tabla: { width: '100%', borderCollapse: 'collapse' },
-  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px', fontSize: '0.7rem' },
+  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px' },
   thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center' },
-  numDia: { fontSize: '0.75rem', fontWeight: 'bold' },
-  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.7rem' },
+  numDia: { fontWeight: 'bold' },
+  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
   tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer' },
   textoCita: { color: '#333', fontWeight: 'bold' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },

@@ -68,10 +68,10 @@ export default function Calendario({ usuarioId }) {
     setDiasSemanaMes(listaDiasTotal);
   }, [mesSeleccionado, vistaEscala]);
 
-  // Generar dinámicamente las horas del día basadas en la jornada configurada (con soporte para madrugadas)
+  // Generar dinámicamente las horas del día basadas estrictamente en la jornada del Chair
   useEffect(() => {
     const aMinutos = (strHora) => {
-      if (!strHora) return 480; // Default 08:00
+      if (!strHora) return 510; // Default 08:30
       const partes = strHora.split(':');
       return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
     };
@@ -79,16 +79,23 @@ export default function Calendario({ usuarioId }) {
     const minInicio = aMinutos(jornadaChair.inicio);
     const minFin = aMinutos(jornadaChair.fin);
 
-    const hIni = Math.floor(minInicio / 60);
-    const hFin = Math.ceil(minFin / 60);
-    
+    // Creamos bloques de 1 hora exactos desde la hora de inicio de la jornada hasta la de fin
     let listaHoras = [];
-    for (let h = hIni; h <= hFin; h++) {
-      listaHoras.push(`${String(h).padStart(2, '0')}:00`);
+    let currentMin = Math.floor(minInicio / 60) * 60; // Redondea a la hora en punto anterior (ej. 08:30 -> 08:00 o mantén el inicio exacto)
+    
+    // Si prefieres que la fila empiece exactamente en la hora de inicio (ej. 08:30):
+    currentMin = minInicio;
+
+    while (currentMin < minFin) {
+      const h = Math.floor(currentMin / 60);
+      const m = currentMin % 60;
+      listaHoras.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      currentMin += 60; // Incrementos de 1 hora
     }
+    
     setHorasDelDia(listaHoras);
   }, [jornadaChair]);
-
+  
   useEffect(() => {
     if (usuarioId && diasSemanaMes.length > 0) {
       cargarDatosSupabase();
@@ -156,24 +163,28 @@ export default function Calendario({ usuarioId }) {
     const minCeldaInicio = aMinutos(hora);
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
-    const minCeldaFin = minCeldaInicio + 60;
+    const minCeldaFin = minCeldaInicio + 60; // Bloque de 1 hora
 
-    // 1. Validar límites exactos de la Jornada Global del Chair
-    if (minCeldaFin <= minJornadaIni || minCeldaInicio >= minJornadaFin) {
-      return false; // Fuera de la jornada configurada -> Bloqueado (Gris)
+    // 1. Si la celda está completamente fuera del rango de la jornada global -> Bloqueado (Gris)
+    if (minCeldaInicio < minJornadaIni || minCeldaInicio >= minJornadaFin) {
+      return false; 
     }
 
+    // 2. Buscamos si hay restricciones específicas para este día
     const restriccionDia = restricciones.find(r => {
       if (!r.fecha_especifica) return false;
       return r.fecha_especifica.substring(0, 10) === fecha;
     });
 
+    // Si el día entero está bloqueado
     if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
       return false;
     }
 
+    // Si no hay restricciones ni tramos guardados para este día -> Disponible libre (Amarillo)
     if (!restriccionDia) return true;
 
+    // Tramos de restricciones configurados (almuerzos, etc.)
     const tramosRestringidos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
       { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
@@ -181,17 +192,19 @@ export default function Calendario({ usuarioId }) {
       { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
     ];
 
+    // 3. Verificamos si la celda choca con algún tramo restringido
     for (let t of tramosRestringidos) {
       const minInicioTramo = aMinutos(t.i);
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
         if (minCeldaInicio < minFinTramo && minCeldaFin > minInicioTramo) {
-          return false; // Dentro de una restricción -> Bloqueado (Gris)
+          return false; // Cae en restricción -> Bloqueado (Gris)
         }
       }
     }
 
+    // 4. Si pasó todas las validaciones -> Libre y Disponible (Amarillo)
     return true;
   };
 

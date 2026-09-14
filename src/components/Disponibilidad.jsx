@@ -1,4 +1,4 @@
-iimport React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 const DIAS_SEMANA_GENERICOS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -145,7 +145,7 @@ export default function Disponibilidad({ usuarioId }) {
           usuario_id: usuarioId,
           mes_periodo: mesSeleccionado,
           dia_semana: d.nombreDia,
-          fecha_especifica: d.fecha, // Grabado estrictamente con fecha exacta para el Calendario y reportes
+          fecha_especifica: d.fecha,
           bloqueado_todo_el_dia: Boolean(fuente.bloqueado_todo_el_dia),
           tramo_1_inicio: fuente.tramo_1_inicio || null,
           tramo_1_fin: fuente.tramo_1_fin || null,
@@ -158,7 +158,6 @@ export default function Disponibilidad({ usuarioId }) {
         });
       });
 
-      // Usar upsert para insertar o actualizar de forma limpia sin duplicados por usuario y fecha
       const { error: errorUpsert } = await supabase
         .from('agd_restricciones_disponibilidad')
         .upsert(payloadFinal, { onConflict: 'usuario_id,fecha_especifica' });
@@ -167,7 +166,6 @@ export default function Disponibilidad({ usuarioId }) {
 
       setMensaje('¡Configuración guardada y sincronizada correctamente!');
       setTimeout(() => setMensaje(''), 4000);
-      // Nota: Se elimina cargarDatos(mesSeleccionado) aquí para evitar que el estado local se sobrescriba y pierda los cambios visuales.
     } catch (err) {
       console.error('Error al guardar:', err.message);
       setMensaje('Error al guardar: ' + err.message);

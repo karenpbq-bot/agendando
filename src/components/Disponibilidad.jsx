@@ -202,6 +202,7 @@ export default function Disponibilidad({ usuarioId }) {
           dia_semana: d.nombreDia,
           fecha_especifica: d.fecha,
           bloqueado_todo_el_dia: Boolean(fuente.bloqueado_todo_el_dia),
+          // Si el usuario borra la hora en el input (queda vacío), enviamos null explícitamente para limpiarlo en la BD
           tramo_1_inicio: fuente.tramo_1_inicio || null,
           tramo_1_fin: fuente.tramo_1_fin || null,
           tramo_2_inicio: fuente.tramo_2_inicio || null,

@@ -8,9 +8,8 @@ export default function Disponibilidad({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
-  const [modo, setModo] = useState('config'); // 'config' para ajustes globales, 'base' para plantilla, 'fechas' para excepciones
+  const [modo, setModo] = useState('config'); 
   
-  // Estados de Configuración Global del Chair
   const [configChair, setConfigChair] = useState({
     pais: 'Peru',
     jornada_inicio: '08:30',
@@ -107,9 +106,9 @@ export default function Disponibilidad({ usuarioId }) {
 
       mapaBase[dia] = {
         dia_semana: dia,
-        bloqueado_todo_el_dia: registroBD ? Boolean(registroBD.bloqueado_todo_el_dia) : (dia === 'Sábado' || dia === 'Domingo'),
-        tramo_1_inicio: registroBD?.tramo_1_inicio ? registroBD.tramo_1_inicio.substring(0, 5) : configChair.jornada_inicio,
-        tramo_1_fin: registroBD?.tramo_1_fin ? registroBD.tramo_1_fin.substring(0, 5) : configChair.jornada_fin,
+        bloqueado_todo_el_dia: registroBD ? Boolean(registroBD.bloqueado_todo_el_dia) : false,
+        tramo_1_inicio: registroBD?.tramo_1_inicio ? registroBD.tramo_1_inicio.substring(0, 5) : '',
+        tramo_1_fin: registroBD?.tramo_1_fin ? registroBD.tramo_1_fin.substring(0, 5) : '',
         tramo_2_inicio: registroBD?.tramo_2_inicio ? registroBD.tramo_2_inicio.substring(0, 5) : '',
         tramo_2_fin: registroBD?.tramo_2_fin ? registroBD.tramo_2_fin.substring(0, 5) : '',
         tramo_3_inicio: registroBD?.tramo_3_inicio ? registroBD.tramo_3_inicio.substring(0, 5) : '',
@@ -156,6 +155,20 @@ export default function Disponibilidad({ usuarioId }) {
     }));
   };
 
+  const limpiarPlantillaDia = (dia) => {
+    setPlantillaSemanal(prev => ({
+      ...prev,
+      [dia]: {
+        dia_semana: dia,
+        bloqueado_todo_el_dia: false,
+        tramo_1_inicio: '', tramo_1_fin: '',
+        tramo_2_inicio: '', tramo_2_fin: '',
+        tramo_3_inicio: '', tramo_3_fin: '',
+        tramo_4_inicio: '', tramo_4_fin: ''
+      }
+    }));
+  };
+
   const manejarCambioExcepcion = (fecha, campo, valor) => {
     const diaInfo = diasDelMes.find(d => d.fecha === fecha);
     const baseSugerida = plantillaSemanal[diaInfo?.nombreDia] || {};
@@ -167,6 +180,22 @@ export default function Disponibilidad({ usuarioId }) {
         [campo]: valor,
         fecha_especifica: fecha,
         dia_semana: diaInfo?.nombreDia
+      }
+    }));
+  };
+
+  const limpiarExcepcionFecha = (fecha) => {
+    const diaInfo = diasDelMes.find(d => d.fecha === fecha);
+    setExcepcionesFechas(prev => ({
+      ...prev,
+      [fecha]: {
+        fecha_especifica: fecha,
+        dia_semana: diaInfo?.nombreDia,
+        bloqueado_todo_el_dia: false,
+        tramo_1_inicio: '', tramo_1_fin: '',
+        tramo_2_inicio: '', tramo_2_fin: '',
+        tramo_3_inicio: '', tramo_3_fin: '',
+        tramo_4_inicio: '', tramo_4_fin: ''
       }
     }));
   };
@@ -202,7 +231,6 @@ export default function Disponibilidad({ usuarioId }) {
           dia_semana: d.nombreDia,
           fecha_especifica: d.fecha,
           bloqueado_todo_el_dia: Boolean(fuente.bloqueado_todo_el_dia),
-          // Si el usuario borra la hora en el input (queda vacío), enviamos null explícitamente para limpiarlo en la BD
           tramo_1_inicio: fuente.tramo_1_inicio || null,
           tramo_1_fin: fuente.tramo_1_fin || null,
           tramo_2_inicio: fuente.tramo_2_inicio || null,
@@ -270,7 +298,6 @@ export default function Disponibilidad({ usuarioId }) {
         </button>
       </div>
 
-      {/* MODO 1: CONFIGURACIÓN GLOBAL */}
       {modo === 'config' && (
         <form onSubmit={guardarConfiguracionGlobal} style={estilos.tarjetaDia}>
           <h3 style={{ fontSize: '0.9rem', color: '#00A89F', marginBottom: '10px' }}>Parámetros Globales del Chair</h3>
@@ -350,7 +377,6 @@ export default function Disponibilidad({ usuarioId }) {
         </form>
       )}
 
-      {/* MODO 2 Y 3: PLANTILLA Y EXCEPCIONES */}
       {(modo === 'base' || modo === 'fechas') && (
         <form onSubmit={guardarRestriccionesMes}>
           {modo === 'base' && (
@@ -367,15 +393,24 @@ export default function Disponibilidad({ usuarioId }) {
                   <div key={dia} style={estilos.tarjetaDia}>
                     <div style={estilos.cabeceraDia}>
                       <span style={estilos.nombreDia}>{dia}</span>
-                      <label style={estilos.labelCheckbox}>
-                        <input 
-                          type="checkbox"
-                          checked={item.bloqueado_todo_el_dia || false}
-                          onChange={(e) => manejarCambioPlantilla(dia, 'bloqueado_todo_el_dia', e.target.checked)}
-                          style={estilos.checkbox}
-                        />
-                        Bloquear día
-                      </label>
+                      <div style={estilos.accionesDerechaCabecera}>
+                        <button 
+                          type="button" 
+                          onClick={() => limpiarPlantillaDia(dia)}
+                          style={estilos.botonLimpiar}
+                        >
+                          Limpiar
+                        </button>
+                        <label style={estilos.labelCheckbox}>
+                          <input 
+                            type="checkbox"
+                            checked={item.bloqueado_todo_el_dia || false}
+                            onChange={(e) => manejarCambioPlantilla(dia, 'bloqueado_todo_el_dia', e.target.checked)}
+                            style={estilos.checkbox}
+                          />
+                          Bloquear día
+                        </label>
+                      </div>
                     </div>
 
                     {!item.bloqueado_todo_el_dia && (
@@ -422,15 +457,24 @@ export default function Disponibilidad({ usuarioId }) {
                         <span style={estilos.badgeFecha}>{d.diaNumero}</span>
                         <span style={estilos.nombreDia}>{d.nombreDia} ({d.fecha})</span>
                       </div>
-                      <label style={estilos.labelCheckbox}>
-                        <input 
-                          type="checkbox"
-                          checked={item.bloqueado_todo_el_dia || false}
-                          onChange={(e) => manejarCambioExcepcion(d.fecha, 'bloqueado_todo_el_dia', e.target.checked)}
-                          style={estilos.checkbox}
-                        />
-                        Bloquear
-                      </label>
+                      <div style={estilos.accionesDerechaCabecera}>
+                        <button 
+                          type="button" 
+                          onClick={() => limpiarExcepcionFecha(d.fecha)}
+                          style={estilos.botonLimpiar}
+                        >
+                          Limpiar
+                        </button>
+                        <label style={estilos.labelCheckbox}>
+                          <input 
+                            type="checkbox"
+                            checked={item.bloqueado_todo_el_dia || false}
+                            onChange={(e) => manejarCambioExcepcion(d.fecha, 'bloqueado_todo_el_dia', e.target.checked)}
+                            style={estilos.checkbox}
+                          />
+                          Bloquear
+                        </label>
+                      </div>
                     </div>
 
                     {!item.bloqueado_todo_el_dia && (
@@ -491,6 +535,8 @@ const estilos = {
   infoDia: { display: 'flex', alignItems: 'center', overflow: 'hidden' },
   badgeFecha: { backgroundColor: '#EBF5F7', color: '#00A89F', padding: '2px 5px', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.75rem', marginRight: '5px', flexShrink: '0' },
   nombreDia: { fontSize: '0.85rem', color: '#333', fontWeight: 'bold' },
+  accionesDerechaCabecera: { display: 'flex', alignItems: 'center', gap: '8px' },
+  botonLimpiar: { backgroundColor: '#F0F0F0', border: '1px solid #CCCCCC', color: '#555555', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
   labelCheckbox: { fontSize: '0.7rem', color: '#D9534F', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', whiteSpace: 'nowrap' },
   checkbox: { width: '14px', height: '14px', cursor: 'pointer' },
   tramosContainer: { display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', boxSizing: 'border-box' },

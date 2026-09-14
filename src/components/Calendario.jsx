@@ -128,10 +128,20 @@ export default function Calendario({ usuarioId }) {
       return false;
     }
 
-    // 2. Si no hay configuración guardada para este día, por defecto permitimos todo (como antes)
+    // 2. Si no hay configuración para este día, por defecto está disponible
     if (!restriccionDia) return true;
 
-    const horaCelda = hora.trim();
+    // Función auxiliar para convertir "HH:MM" a minutos totales del día
+    const aMinutos = (strHora) => {
+      if (!strHora) return null;
+      const partes = strHora.substring(0, 5).split(':');
+      if (partes.length < 2) return null;
+      return parseInt(partes[0], 10) * 60 + parseInt(partes[1], 10);
+    };
+
+    const minutosCelda = aMinutos(hora);
+    if (minutosCelda === null) return true;
+
     const tramos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
       { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
@@ -143,20 +153,20 @@ export default function Calendario({ usuarioId }) {
     let estaDentroDeTramoValido = false;
 
     for (let t of tramos) {
-      if (t.i && t.f) {
-        tieneTramosValidos = true;
-        const inicio = t.i.substring(0, 5);
-        const fin = t.f.substring(0, 5);
+      const minInicio = aMinutos(t.i);
+      const minFin = aMinutos(t.f);
 
-        // Si la hora de la celda está dentro del tramo de trabajo configurado
-        if (horaCelda >= inicio && horaCelda < fin) {
+      if (minInicio !== null && minFin !== null) {
+        tieneTramosValidos = true;
+        // Si los minutos de la celda caen dentro del rango de trabajo configurado
+        if (minutosCelda >= minInicio && minutosCelda < minFin) {
           estaDentroDeTramoValido = true;
           break;
         }
       }
     }
 
-    // 3. Si el día tiene tramos configurados, la celda SOLO es disponible si cayó dentro de un tramo
+    // Si hay tramos configurados, la celda solo es disponible si cayó dentro de ellos
     if (tieneTramosValidos) {
       return estaDentroDeTramoValido;
     }

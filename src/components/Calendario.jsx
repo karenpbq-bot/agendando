@@ -102,15 +102,47 @@ export default function Calendario({ usuarioId }) {
   };
 
   const esDisponible = (fecha, hora) => {
-    // PRUEBA VISUAL: Bloquear estrictamente todo lo que esté fuera de 10:00 a 17:00
-    const horaNum = parseInt(hora.split(':')[0], 10);
-    
-    // Si la hora es menor a 10 o mayor o igual a 17, se marca como RESTRINGIDA (false -> gris)
-    if (horaNum < 10 || horaNum >= 17) {
+    // Buscar la restricción guardada para esta fecha exacta
+    const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
+
+    // Si el día entero está marcado como bloqueado, no está disponible (gris)
+    if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
       return false;
     }
 
-    // Lo demás queda HABILITADO (true -> amarillo)
+    // Si no hay registro de restricciones para este día, por defecto se asume disponible
+    if (!restriccionDia) return true;
+
+    const horaCelda = hora.trim();
+    const tramos = [
+      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
+      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
+      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
+      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
+    ];
+
+    let tieneTramosValidos = false;
+    let estaDentroDeTramo = false;
+
+    for (let t of tramos) {
+      if (t.i && t.f) {
+        tieneTramosValidos = true;
+        const inicio = t.i.substring(0, 5);
+        const fin = t.f.substring(0, 5);
+
+        // Si la hora de la celda cae dentro de un tramo laboral configurado
+        if (horaCelda >= inicio && horaCelda < fin) {
+          estaDentroDeTramo = true;
+          break;
+        }
+      }
+    }
+
+    // Si el día tiene tramos configurados, solo está disponible si CUMPLE con estar dentro de ellos
+    if (tieneTramosValidos) {
+      return estaDentroDeTramo;
+    }
+
     return true;
   };
 

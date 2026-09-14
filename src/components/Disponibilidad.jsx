@@ -10,9 +10,7 @@ export default function Disponibilidad({ usuarioId }) {
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
   const [modo, setModo] = useState('base'); // 'base' para plantilla semanal, 'fechas' para excepciones puntuales
   
-  // Plantilla por día de la semana
   const [plantillaSemanal, setPlantillaSemanal] = useState({});
-  // Excepciones por fecha específica (YYYY-MM-DD)
   const [excepcionesFechas, setExcepcionesFechas] = useState({});
   const [diasDelMes, setDiasDelMes] = useState([]);
   
@@ -44,30 +42,52 @@ export default function Disponibilidad({ usuarioId }) {
     }
     setDiasDelMes(listaDias);
 
-    const { data } = await supabase
+    // Consultar Supabase del mes para este usuario
+    const { data, error } = await supabase
       .from('agd_restricciones_disponibilidad')
       .select('*')
       .eq('usuario_id', usuarioId)
       .eq('mes_periodo', mesStr);
 
+    if (error) {
+      console.error('Error al cargar disponibilidad:', error.message);
+    }
+
+    // 1. Inicializar Plantilla Semanal Base tomando el primer registro disponible de ese día
     const mapaBase = {};
     DIAS_SEMANA_GENERICOS.forEach(dia => {
-      const existente = data?.find(r => r.dia_semana === dia && !r.fecha_especifica);
-      mapaBase[dia] = existente || {
+      const existente = data?.find(r => r.dia_semana === dia);
+      mapaBase[dia] = {
         dia_semana: dia,
-        bloqueado_todo_el_dia: dia === 'Sábado' || dia === 'Domingo',
-        tramo_1_inicio: '00:00', tramo_1_fin: '08:00',
-        tramo_2_inicio: '22:00', tramo_2_fin: '23:59',
-        tramo_3_inicio: '', tramo_3_fin: '',
-        tramo_4_inicio: '', tramo_4_fin: ''
+        bloqueado_todo_el_dia: existente ? Boolean(existente.bloqueado_todo_el_dia) : (dia === 'Sábado' || dia === 'Domingo'),
+        tramo_1_inicio: existente?.tramo_1_inicio ? existente.tramo_1_inicio.substring(0, 5) : '00:00',
+        tramo_1_fin: existente?.tramo_1_fin ? existente.tramo_1_fin.substring(0, 5) : '08:00',
+        tramo_2_inicio: existente?.tramo_2_inicio ? existente.tramo_2_inicio.substring(0, 5) : '22:00',
+        tramo_2_fin: existente?.tramo_2_fin ? existente.tramo_2_fin.substring(0, 5) : '23:59',
+        tramo_3_inicio: existente?.tramo_3_inicio ? existente.tramo_3_inicio.substring(0, 5) : '',
+        tramo_3_fin: existente?.tramo_3_fin ? existente.tramo_3_fin.substring(0, 5) : '',
+        tramo_4_inicio: existente?.tramo_4_inicio ? existente.tramo_4_inicio.substring(0, 5) : '',
+        tramo_4_fin: existente?.tramo_4_fin ? existente.tramo_4_fin.substring(0, 5) : ''
       };
     });
     setPlantillaSemanal(mapaBase);
 
+    // 2. Inicializar Excepciones por Fecha Específica exacta
     const mapaExcepciones = {};
     data?.forEach(r => {
       if (r.fecha_especifica) {
-        mapaExcepciones[r.fecha_especifica] = r;
+        mapaExcepciones[r.fecha_especifica] = {
+          ...r,
+          bloqueado_todo_el_dia: Boolean(r.bloqueado_todo_el_dia),
+          tramo_1_inicio: r.tramo_1_inicio ? r.tramo_1_inicio.substring(0, 5) : '',
+          tramo_1_fin: r.tramo_1_fin ? r.tramo_1_fin.substring(0, 5) : '',
+          tramo_2_inicio: r.tramo_2_inicio ? r.tramo_2_inicio.substring(0, 5) : '',
+          tramo_2_fin: r.tramo_2_fin ? r.tramo_2_fin.substring(0, 5) : '',
+          tramo_3_inicio: r.tramo_3_inicio ? r.tramo_3_inicio.substring(0, 5) : '',
+          tramo_3_fin: r.tramo_3_fin ? r.tramo_3_fin.substring(0, 5) : '',
+          tramo_4_inicio: r.tramo_4_inicio ? r.tramo_4_inicio.substring(0, 5) : '',
+          tramo_4_fin: r.tramo_4_fin ? r.tramo_4_fin.substring(0, 5) : '',
+        };
       }
     });
     setExcepcionesFechas(mapaExcepciones);
@@ -83,12 +103,16 @@ export default function Disponibilidad({ usuarioId }) {
   };
 
   const manejarCambioExcepcion = (fecha, campo, valor) => {
+    const diaInfo = diasDelMes.find(d => d.fecha === fecha);
+    const baseSugerida = plantillaSemanal[diaInfo?.nombreDia] || {};
+
     setExcepcionesFechas(prev => ({
       ...prev,
       [fecha]: {
-        ...(prev[fecha] || plantillaSemanal[diasDelMes.find(d => d.fecha === fecha)?.nombreDia]),
+        ...(prev[fecha] || baseSugerida),
         [campo]: valor,
-        fecha_especifica: fecha
+        fecha_especifica: fecha,
+        dia_semana: diaInfo?.nombreDia
       }
     }));
   };
@@ -100,7 +124,7 @@ export default function Disponibilidad({ usuarioId }) {
       nuevoMapa[dia] = { ...patronLunes, dia_semana: dia };
     });
     setPlantillaSemanal(nuevoMapa);
-    setMensaje('Se aplicaron los horarios del Lunes a toda la semana base.');
+    setMensaje('Se aplicaron los horarios del Lunes a toda la plantilla base.');
     setTimeout(() => setMensaje(''), 4000);
   };
 
@@ -110,67 +134,43 @@ export default function Disponibilidad({ usuarioId }) {
     setMensaje('');
 
     try {
-      // 1. Limpiar registros previos del mes para evitar duplicados
-      await supabase.from('agd_restricciones_disponibilidad')
-        .delete()
-        .eq('usuario_id', usuarioId)
-        .eq('mes_periodo', mesSeleccionado);
-
       let payloadFinal = [];
 
-      // 2. Mapear cada día del mes aplicando la Plantilla Base o sus Excepciones
       diasDelMes.forEach(d => {
         const excepcion = excepcionesFechas[d.fecha];
+        const patron = plantillaSemanal[d.nombreDia] || {};
+        const fuente = excepcion || patron;
 
-        if (excepcion) {
-          // Si tiene una excepción puntual grabada en la pestaña 2, se respeta
-          payloadFinal.push({
-            usuario_id: usuarioId,
-            mes_periodo: mesSeleccionado,
-            dia_semana: d.nombreDia,
-            fecha_especifica: d.fecha,
-            bloqueado_todo_el_dia: excepcion.bloqueado_todo_el_dia,
-            tramo_1_inicio: excepcion.tramo_1_inicio || null,
-            tramo_1_fin: excepcion.tramo_1_fin || null,
-            tramo_2_inicio: excepcion.tramo_2_inicio || null,
-            tramo_2_fin: excepcion.tramo_2_fin || null,
-            tramo_3_inicio: excepcion.tramo_3_inicio || null,
-            tramo_3_fin: excepcion.tramo_3_fin || null,
-            tramo_4_inicio: excepcion.tramo_4_inicio || null,
-            tramo_4_fin: excepcion.tramo_4_fin || null,
-          });
-        } else {
-          // Si no hay excepción, tomamos la configuración de la Plantilla Base Semanal (Pestaña 1) según el nombre del día
-          const patronBase = plantillaSemanal[d.nombreDia] || {};
-          payloadFinal.push({
-            usuario_id: usuarioId,
-            mes_periodo: mesSeleccionado,
-            dia_semana: d.nombreDia,
-            fecha_especifica: d.fecha, // Grabado con fecha exacta para que el Calendario lo lea perfecto
-            bloqueado_todo_el_dia: patronBase.bloqueado_todo_el_dia || false,
-            tramo_1_inicio: patronBase.tramo_1_inicio || null,
-            tramo_1_fin: patronBase.tramo_1_fin || null,
-            tramo_2_inicio: patronBase.tramo_2_inicio || null,
-            tramo_2_fin: patronBase.tramo_2_fin || null,
-            tramo_3_inicio: patronBase.tramo_3_inicio || null,
-            tramo_3_fin: patronBase.tramo_3_fin || null,
-            tramo_4_inicio: patronBase.tramo_4_inicio || null,
-            tramo_4_fin: patronBase.tramo_4_fin || null,
-          });
-        }
+        payloadFinal.push({
+          usuario_id: usuarioId,
+          mes_periodo: mesSeleccionado,
+          dia_semana: d.nombreDia,
+          fecha_especifica: d.fecha, // Grabado estrictamente con fecha exacta para Calendario y futuros reportes
+          bloqueado_todo_el_dia: Boolean(fuente.bloqueado_todo_el_dia),
+          tramo_1_inicio: fuente.tramo_1_inicio || null,
+          tramo_1_fin: fuente.tramo_1_fin || null,
+          tramo_2_inicio: fuente.tramo_2_inicio || null,
+          tramo_2_fin: fuente.tramo_2_fin || null,
+          tramo_3_inicio: fuente.tramo_3_inicio || null,
+          tramo_3_fin: fuente.tramo_3_fin || null,
+          tramo_4_inicio: fuente.tramo_4_inicio || null,
+          tramo_4_fin: fuente.tramo_4_fin || null,
+        });
       });
 
-      // 3. Insertar el paquete completo a Supabase
-      const { error } = await supabase.from('agd_restricciones_disponibilidad').insert(payloadFinal);
+      // Usar upsert para insertar o actualizar de forma limpia sin duplicados por usuario y fecha
+      const { error: errorUpsert } = await supabase
+        .from('agd_restricciones_disponibilidad')
+        .upsert(payloadFinal, { onConflict: 'usuario_id,fecha_especifica' });
 
-      if (error) {
-        setMensaje('Error al guardar: ' + error.message);
-      } else {
-        setMensaje('¡Configuración guardada y sincronizada con el calendario con éxito!');
-        setTimeout(() => setMensaje(''), 4000);
-      }
+      if (errorUpsert) throw errorUpsert;
+
+      setMensaje('¡Configuración guardada y sincronizada correctamente!');
+      setTimeout(() => setMensaje(''), 4000);
+      cargarDatos(mesSeleccionado);
     } catch (err) {
-      setMensaje('Error de conexión.');
+      console.error('Error al guardar:', err.message);
+      setMensaje('Error al guardar: ' + err.message);
     } finally {
       setCargando(false);
     }
@@ -179,9 +179,8 @@ export default function Disponibilidad({ usuarioId }) {
   return (
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Disponibilidad y Horarios</h2>
-      <p style={estilos.subtitulo}>Configura tu base semanal y ajusta fechas puntuales si lo requieres.</p>
+      <p style={estilos.subtitulo}>Configura tu plantilla semanal base o aplica ajustes por fecha específica.</p>
 
-      {/* Selector de Mes */}
       <div style={estilos.seccionMes}>
         <label style={estilos.labelMes}>Seleccionar Mes:</label>
         <input 
@@ -192,7 +191,6 @@ export default function Disponibilidad({ usuarioId }) {
         />
       </div>
 
-      {/* Selector de Modo (Pestañas móviles) */}
       <div style={estilos.pestanasContainer}>
         <button 
           type="button" 
@@ -206,13 +204,12 @@ export default function Disponibilidad({ usuarioId }) {
           onClick={() => setModo('fechas')}
           style={{ ...estilos.pestana, backgroundColor: modo === 'fechas' ? '#00A89F' : '#E0E0E0', color: modo === 'fechas' ? '#FFF' : '#333' }}
         >
-          2. Ajustes por Fecha Especifica
+          2. Ajustes por Fecha Específica
         </button>
       </div>
 
       <form onSubmit={guardarConfiguracion}>
         
-        {/* MODO 1: PLANTILLA SEMANAL */}
         {modo === 'base' && (
           <div>
             <div style={estilos.barraAcciones}>
@@ -268,10 +265,9 @@ export default function Disponibilidad({ usuarioId }) {
           </div>
         )}
 
-        {/* MODO 2: AJUSTES POR FECHA ESPECÍFICA */}
         {modo === 'fechas' && (
           <div>
-            <p style={estilos.avisoFechas}>Aquí solo muestra y edita las fechas que requieran un cambio especial (ej. feriados, viajes o cumpleaños).</p>
+            <p style={estilos.avisoFechas}>Modifica únicamente los días que requieran excepciones puntuales (feriados, viajes, etc.).</p>
             {diasDelMes.map(d => {
               const item = excepcionesFechas[d.fecha] || plantillaSemanal[d.nombreDia] || {};
               const tieneExcepcion = !!excepcionesFechas[d.fecha];
@@ -302,14 +298,14 @@ export default function Disponibilidad({ usuarioId }) {
                           <div style={estilos.inputsTimeWrapper}>
                             <input 
                               type="time" 
-                              value={item[`tramo_${num}_inicio`] !== undefined ? item[`tramo_${num}_inicio`] : (plantillaSemanal[d.nombreDia]?.[`tramo_${num}_inicio`] || '')}
+                              value={item[`tramo_${num}_inicio`] || ''}
                               onChange={(e) => manejarCambioExcepcion(d.fecha, `tramo_${num}_inicio`, e.target.value)}
                               style={estilos.inputTime}
                             />
                             <span style={estilos.separadorHora}>a</span>
                             <input 
                               type="time" 
-                              value={item[`tramo_${num}_fin`] !== undefined ? item[`tramo_${num}_fin`] : (plantillaSemanal[d.nombreDia]?.[`tramo_${num}_fin`] || '')}
+                              value={item[`tramo_${num}_fin`] || ''}
                               onChange={(e) => manejarCambioExcepcion(d.fecha, `tramo_${num}_fin`, e.target.value)}
                               style={estilos.inputTime}
                             />

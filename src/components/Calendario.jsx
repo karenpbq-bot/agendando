@@ -28,6 +28,7 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
+  // Generador de días según la vista seleccionada (1 mes o trimestre)
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
     let mesesAProcesar = [mesSeleccionado];
@@ -77,25 +78,27 @@ export default function Calendario({ usuarioId }) {
         .eq('rol', 'Empresario');
       if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
-      if (diasSemanaMes.length > 0) {
-        const fechaInicioRango = diasSemanaMes[0].fecha;
-        const fechaFinRango = diasSemanaMes[diasSemanaMes.length - 1].fecha;
+      const [anio, mes] = mesSeleccionado.split('-').map(Number);
+      let mesesFiltro = [mesSeleccionado];
+      if (vistaEscala === 'trimestre') {
+        const fAnt = new Date(anio, mes - 2, 1);
+        const fProx = new Date(anio, mes, 1);
+        mesesFiltro.push(
+          `${fAnt.getFullYear()}-${String(fAnt.getMonth() + 1).padStart(2, '0')}`,
+          `${fProx.getFullYear()}-${String(fProx.getMonth() + 1).padStart(2, '0')}`
+        );
+      }
 
-        // Forzamos el tipo de usuarioId según tu base de datos (si es número usa Number, si es texto déjalo así)
-        const idUsuarioLimpio = Number(usuarioId) || usuarioId;
+      // Consultar restricciones usando mes_periodo
+      const { data: dataRest, error: errorRest } = await supabase
+        .from('agd_restricciones_disponibilidad')
+        .select('*')
+        .eq('usuario_id', usuarioId)
+        .in('mes_periodo', mesesFiltro);
 
-        const { data: dataRest, error: errorRest } = await supabase
-          .from('agd_restricciones_disponibilidad')
-          .select('*')
-          .eq('usuario_id', idUsuarioLimpio)
-          .gte('fecha_especifica', fechaInicioRango)
-          .lte('fecha_especifica', fechaFinRango);
-
-        if (errorRest) console.error('Error en restricciones:', errorRest.message);
-        if (dataRest) {
-          console.log('Restricciones cargadas desde BD:', dataRest); // Para auditar en consola (F12)
-          setRestricciones(dataRest);
-        }
+      if (errorRest) console.error('Error cargando restricciones:', errorRest);
+      if (dataRest) {
+        setRestricciones(dataRest);
       }
 
       const { data: dataCitas } = await supabase
@@ -108,19 +111,24 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
+  /**
+   * REGLA DE DISPONIBILIDAD CORREGIDA:
+   * Por defecto, el calendario asume que el día NO está disponible (gris) 
+   * a menos que la hora caiga explícitamente dentro de un tramo laboral configurado 
+   * y el día no esté bloqueado por completo.
+   */
   const esDisponible = (fecha, hora) => {
-    // Buscamos comparando los primeros 10 caracteres (YYYY-MM-DD) para evitar problemas de formato de fecha
     const restriccionDia = restricciones.find(r => {
       if (!r.fecha_especifica) return false;
       return r.fecha_especifica.substring(0, 10) === fecha;
     });
 
-    // Si el día entero está marcado como bloqueado, no está disponible (gris)
+    // 1. Si el día entero está bloqueado, no está disponible (gris)
     if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
       return false;
     }
 
-    // Si no hay registro de restricciones para este día, por defecto se asume disponible
+    // 2. Si no hay configuración guardada para este día, por defecto permitimos todo (como antes)
     if (!restriccionDia) return true;
 
     const horaCelda = hora.trim();
@@ -132,7 +140,7 @@ export default function Calendario({ usuarioId }) {
     ];
 
     let tieneTramosValidos = false;
-    let estaDentroDeTramo = false;
+    let estaDentroDeTramoValido = false;
 
     for (let t of tramos) {
       if (t.i && t.f) {
@@ -140,66 +148,27 @@ export default function Calendario({ usuarioId }) {
         const inicio = t.i.substring(0, 5);
         const fin = t.f.substring(0, 5);
 
+        // Si la hora de la celda está dentro del tramo de trabajo configurado
         if (horaCelda >= inicio && horaCelda < fin) {
-          estaDentroDeTramo = true;
+          estaDentroDeTramoValido = true;
           break;
         }
       }
     }
 
+    // 3. Si el día tiene tramos configurados, la celda SOLO es disponible si cayó dentro de un tramo
     if (tieneTramosValidos) {
-      return estaDentroDeTramo;
-    }
-
-    return true;
-  };
-
-  const esDisponible = (fecha, hora) => {
-    // Buscar la restricción guardada para esta fecha exacta
-    const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
-
-    // Si el día entero está marcado como bloqueado, no está disponible (gris)
-    if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
-      return false;
-    }
-
-    // Si no hay registro de restricciones para este día, por defecto se asume disponible
-    if (!restriccionDia) return true;
-
-    const horaCelda = hora.trim();
-    const tramos = [
-      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
-      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
-      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
-      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
-    ];
-
-    let tieneTramosValidos = false;
-    let estaDentroDeTramo = false;
-
-    for (let t of tramos) {
-      if (t.i && t.f) {
-        tieneTramosValidos = true;
-        const inicio = t.i.substring(0, 5);
-        const fin = t.f.substring(0, 5);
-
-        // Si la hora de la celda cae dentro de un tramo laboral configurado
-        if (horaCelda >= inicio && horaCelda < fin) {
-          estaDentroDeTramo = true;
-          break;
-        }
-      }
-    }
-
-    // Si el día tiene tramos configurados, solo está disponible si CUMPLE con estar dentro de ellos
-    if (tieneTramosValidos) {
-      return estaDentroDeTramo;
+      return estaDentroDeTramoValido;
     }
 
     return true;
   };
 
   const abrirModalParaCelda = (dia, hora, citaEncontrada = null) => {
+    const disponible = esDisponible(dia.fecha, hora);
+    // Si la celda no está disponible y no hay una cita agendada ahí, prohibir abrir el modal
+    if (!disponible && !citaEncontrada) return;
+
     setDiaSeleccionado(dia);
     
     if (citaEncontrada) {
@@ -378,6 +347,7 @@ export default function Calendario({ usuarioId }) {
                     else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
                     estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                    estiloCelda.cursor = 'pointer';
                   } else {
                     estiloCelda.backgroundColor = '#EAEAEA';
                     estiloCelda.cursor = 'not-allowed';
@@ -539,7 +509,7 @@ const estilos = {
   thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center' },
   numDia: { fontWeight: 'bold' },
   tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
-  tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer' },
+  tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE' },
   textoCita: { color: '#333', fontWeight: 'bold' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },

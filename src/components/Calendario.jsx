@@ -13,6 +13,10 @@ export default function Calendario({ usuarioId }) {
   const [citas, setCitas] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
   
+  // Estado para los límites de jornada del Chair
+  const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30' });
+  const [horasDelDia, setHorasDelDia] = useState([]);
+
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
   const [citaExistenteId, setCitaExistenteId] = useState(null);
@@ -64,6 +68,27 @@ export default function Calendario({ usuarioId }) {
     setDiasSemanaMes(listaDiasTotal);
   }, [mesSeleccionado, vistaEscala]);
 
+  // Generar dinámicamente las horas del día basadas en la jornada configurada (con soporte para madrugadas)
+  useEffect(() => {
+    const aMinutos = (strHora) => {
+      if (!strHora) return 480; // Default 08:00
+      const partes = strHora.split(':');
+      return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
+    };
+
+    const minInicio = aMinutos(jornadaChair.inicio);
+    const minFin = aMinutos(jornadaChair.fin);
+
+    const hIni = Math.floor(minInicio / 60);
+    const hFin = Math.ceil(minFin / 60);
+    
+    let listaHoras = [];
+    for (let h = hIni; h <= hFin; h++) {
+      listaHoras.push(`${String(h).padStart(2, '0')}:00`);
+    }
+    setHorasDelDia(listaHoras);
+  }, [jornadaChair]);
+
   useEffect(() => {
     if (usuarioId && diasSemanaMes.length > 0) {
       cargarDatosSupabase();
@@ -72,6 +97,19 @@ export default function Calendario({ usuarioId }) {
 
   const cargarDatosSupabase = async () => {
     try {
+      const { data: configData } = await supabase
+        .from('agd_configuracion_chair')
+        .select('jornada_inicio, jornada_fin')
+        .eq('usuario_id', usuarioId)
+        .single();
+
+      if (configData) {
+        setJornadaChair({
+          inicio: configData.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30',
+          fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30'
+        });
+      }
+
       const { data: dataEmpresarios } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol')
@@ -89,7 +127,6 @@ export default function Calendario({ usuarioId }) {
         );
       }
 
-      // Consulta de restricciones usando mes_periodo
       const { data: dataRest, error: errorRest } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
@@ -97,13 +134,7 @@ export default function Calendario({ usuarioId }) {
         .in('mes_periodo', mesesFiltro);
 
       if (errorRest) console.error('Error cargando restricciones:', errorRest);
-
-      // Auditoría exacta de los datos obtenidos de Supabase
-      console.log('DATOS RECIBIDOS DE SUPABASE:', { usuarioId, mesesFiltro, dataRest });
-
-      if (dataRest) {
-        setRestricciones(dataRest);
-      }
+      if (dataRest) setRestricciones(dataRest);
 
       const { data: dataCitas } = await supabase
         .from('agd_citas')
@@ -115,38 +146,33 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  /**
-   * REGLA DE DISPONIBILIDAD CORREGIDA:
-   * Por defecto, el calendario asume que el día NO está disponible (gris) 
-   * a menos que la hora caiga explícitamente dentro de un tramo laboral configurado 
-   * y el día no esté bloqueado por completo.
-   */
   const esDisponible = (fecha, hora) => {
+    const aMinutos = (strHora) => {
+      if (!strHora) return null;
+      const partes = strHora.split(':');
+      return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
+    };
+
+    const minCeldaInicio = aMinutos(hora);
+    const minJornadaIni = aMinutos(jornadaChair.inicio);
+    const minJornadaFin = aMinutos(jornadaChair.fin);
+    const minCeldaFin = minCeldaInicio + 60;
+
+    // 1. Validar límites exactos de la Jornada Global del Chair
+    if (minCeldaFin <= minJornadaIni || minCeldaInicio >= minJornadaFin) {
+      return false; // Fuera de la jornada configurada -> Bloqueado (Gris)
+    }
+
     const restriccionDia = restricciones.find(r => {
       if (!r.fecha_especifica) return false;
       return r.fecha_especifica.substring(0, 10) === fecha;
     });
 
-    // 1. Si el día entero está marcado como bloqueado, no está disponible (gris)
     if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
       return false;
     }
 
-    // 2. Si no hay ningún registro de restricciones para este día, todo está libre (disponible)
     if (!restriccionDia) return true;
-
-    // Función para convertir "HH:MM:SS" o "HH:MM" a minutos totales desde medianoche
-    const aMinutos = (strHora) => {
-      if (!strHora) return null;
-      const partes = strHora.split(':');
-      const h = parseInt(partes[0] || 0, 10);
-      const m = parseInt(partes[1] || 0, 10);
-      return h * 60 + m;
-    };
-
-    const minCeldaInicio = aMinutos(hora);
-    if (minCeldaInicio === null) return true;
-    const minCeldaFin = minCeldaInicio + 60; // Cada celda representa 1 hora
 
     const tramosRestringidos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
@@ -155,25 +181,22 @@ export default function Calendario({ usuarioId }) {
       { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
     ];
 
-    // 3. Verificamos si la celda se cruza con CUALQUIER tramo de restricción guardado
     for (let t of tramosRestringidos) {
       const minInicioTramo = aMinutos(t.i);
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
         if (minCeldaInicio < minFinTramo && minCeldaFin > minInicioTramo) {
-          return false; // Está dentro de una restricción -> BLOQUEADO (Gris)
+          return false; // Dentro de una restricción -> Bloqueado (Gris)
         }
       }
     }
 
-    // 4. Si no cayó en ninguna restricción -> LIBRE (Amarillo)
     return true;
   };
 
   const abrirModalParaCelda = (dia, hora, citaEncontrada = null) => {
     const disponible = esDisponible(dia.fecha, hora);
-    // Si la celda no está disponible y no hay una cita agendada ahí, prohibir abrir el modal
     if (!disponible && !citaEncontrada) return;
 
     setDiaSeleccionado(dia);
@@ -276,8 +299,6 @@ export default function Calendario({ usuarioId }) {
       setMensaje('Error en el proceso: ' + err.message);
     }
   };
-
-  const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
   const estilosEscala = {
     fontSize: vistaEscala === 'trimestre' ? '0.45rem' : '0.7rem',

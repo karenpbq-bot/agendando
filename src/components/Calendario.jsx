@@ -125,8 +125,8 @@ export default function Calendario({ usuarioId }) {
       { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
     ];
 
-    let estaEnAlgunTramoValido = false;
     let tieneTramosDefinidos = false;
+    let estaEnAlgunTramoValido = false;
 
     for (let t of tramos) {
       if (t.i && t.f) {
@@ -142,7 +142,7 @@ export default function Calendario({ usuarioId }) {
       }
     }
 
-    // Si el día tiene tramos configurados pero la hora NO cae en ninguno, se considera bloqueado (fuera de horario)
+    // Si el día tiene tramos configurados pero la hora NO cae en ninguno, se bloquea
     if (tieneTramosDefinidos && !estaEnAlgunTramoValido) {
       return false;
     }

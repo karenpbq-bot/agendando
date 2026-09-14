@@ -80,23 +80,20 @@ export default function Calendario({ usuarioId }) {
         .eq('rol', 'Empresario');
       if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
-      const [anio, mes] = mesSeleccionado.split('-').map(Number);
-      let mesesFiltro = [mesSeleccionado];
-      if (vistaEscala === 'trimestre') {
-        const fAnt = new Date(anio, mes - 2, 1);
-        const fProx = new Date(anio, mes, 1);
-        mesesFiltro.push(
-          `${fAnt.getFullYear()}-${String(fAnt.getMonth() + 1).padStart(2, '0')}`,
-          `${fProx.getFullYear()}-${String(fProx.getMonth() + 1).padStart(2, '0')}`
-        );
-      }
+      if (diasSemanaMes.length > 0) {
+        const fechaInicioRango = diasSemanaMes[0].fecha;
+        const fechaFinRango = diasSemanaMes[diasSemanaMes.length - 1].fecha;
 
-      const { data: dataRest } = await supabase
-        .from('agd_restricciones_disponibilidad')
-        .select('*')
-        .eq('usuario_id', usuarioId)
-        .in('mes_periodo', mesesFiltro);
-      if (dataRest) setRestricciones(dataRest);
+        // Consultar restricciones por rango de fechas exactas (más robusto que el mes_periodo)
+        const { data: dataRest } = await supabase
+          .from('agd_restricciones_disponibilidad')
+          .select('*')
+          .eq('usuario_id', usuarioId)
+          .gte('fecha_especifica', fechaInicioRango)
+          .lte('fecha_especifica', fechaFinRango);
+
+        if (dataRest) setRestricciones(dataRest);
+      }
 
       const { data: dataCitas } = await supabase
         .from('agd_citas')
@@ -106,6 +103,51 @@ export default function Calendario({ usuarioId }) {
     } catch (err) {
       console.error('Error cargando datos de Supabase:', err);
     }
+  };
+
+  const esDisponible = (fecha, hora) => {
+    // Buscar la restricción exacta para esta fecha
+    const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
+
+    // Si no hay ninguna regla guardada para este día, por defecto está disponible
+    if (!restriccionDia) return true;
+
+    // Si el día entero está marcado como bloqueado (TRUE), no está disponible
+    if (restriccionDia.bloqueado_todo_el_dia === true) {
+      return false;
+    }
+
+    const horaCelda = hora.trim();
+    const tramos = [
+      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
+      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
+      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
+      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
+    ];
+
+    let estaEnAlgunTramoValido = false;
+    let tieneTramosDefinidos = false;
+
+    for (let t of tramos) {
+      if (t.i && t.f) {
+        tieneTramosDefinidos = true;
+        const inicio = t.i.substring(0, 5);
+        const fin = t.f.substring(0, 5);
+
+        // Si la hora de la celda cae dentro de este tramo habilitado
+        if (horaCelda >= inicio && horaCelda < fin) {
+          estaEnAlgunTramoValido = true;
+          break;
+        }
+      }
+    }
+
+    // Si el día tiene tramos configurados pero la hora NO cae en ninguno, se considera bloqueado (fuera de horario)
+    if (tieneTramosDefinidos && !estaEnAlgunTramoValido) {
+      return false;
+    }
+
+    return true;
   };
 
   const abrirModalParaCelda = (dia, hora, citaEncontrada = null) => {
@@ -304,13 +346,19 @@ export default function Calendario({ usuarioId }) {
                   const disponible = esDisponible(d.fecha, hora);
                   const citaEncontrada = citas.find(c => c.fecha_cita === d.fecha && hora >= c.hora_inicio && hora < c.hora_fin);
 
-                  let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
+                 let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
+                  
                   if (citaEncontrada) {
                     if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
                     else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
                     else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
+                    // Espacio HABILITADO / Libre (Amarillo translúcido)
                     estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                  } else {
+                    // Espacio RESTRINGIDO / Bloqueado (Gris claro inactivo)
+                    estiloCelda.backgroundColor = '#EAEAEA';
+                    estiloCelda.cursor = 'not-allowed';
                   }
 
                   return (

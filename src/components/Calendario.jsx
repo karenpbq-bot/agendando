@@ -127,12 +127,12 @@ export default function Calendario({ usuarioId }) {
       return r.fecha_especifica.substring(0, 10) === fecha;
     });
 
-    // 1. Si el día entero está bloqueado, no está disponible (gris)
+    // 1. Si el día entero está marcado como bloqueado, no está disponible (gris)
     if (restriccionDia && restriccionDia.bloqueado_todo_el_dia === true) {
       return false;
     }
 
-    // 2. Si no hay registro de restricciones para este día, por defecto está disponible
+    // 2. Si no hay ningún registro de restricciones para este día, todo está libre (disponible)
     if (!restriccionDia) return true;
 
     // Función para convertir "HH:MM:SS" o "HH:MM" a minutos totales desde medianoche
@@ -146,38 +146,28 @@ export default function Calendario({ usuarioId }) {
 
     const minCeldaInicio = aMinutos(hora);
     if (minCeldaInicio === null) return true;
-    const minCeldaFin = minCeldaInicio + 60; // Cada celda representa 1 hora de duración
+    const minCeldaFin = minCeldaInicio + 60; // Cada celda representa 1 hora
 
-    const tramos = [
+    const tramosRestringidos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
       { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
       { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
       { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
     ];
 
-    let tieneTramosValidos = false;
-    let estaDentroDeTramo = false;
-
-    for (let t of tramos) {
+    // 3. Verificamos si la celda se cruza con CUALQUIER tramo de restricción guardado
+    for (let t of tramosRestringidos) {
       const minInicioTramo = aMinutos(t.i);
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
-        tieneTramosValidos = true;
-        
-        // Verificamos si la hora de la celda se encuentra dentro del rango habilitado
-        if (minCeldaInicio >= minInicioTramo && minCeldaFin <= minFinTramo) {
-          estaDentroDeTramo = true;
-          break;
+        if (minCeldaInicio < minFinTramo && minCeldaFin > minInicioTramo) {
+          return false; // Está dentro de una restricción -> BLOQUEADO (Gris)
         }
       }
     }
 
-    // Si el día tiene tramos configurados, solo está disponible si cayó dentro de ellos
-    if (tieneTramosValidos) {
-      return estaDentroDeTramo;
-    }
-
+    // 4. Si no cayó en ninguna restricción -> LIBRE (Amarillo)
     return true;
   };
 

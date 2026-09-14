@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+iimport React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 const DIAS_SEMANA_GENERICOS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -53,10 +53,10 @@ export default function Disponibilidad({ usuarioId }) {
       console.error('Error al cargar disponibilidad:', error.message);
     }
 
-    // 1. Inicializar Plantilla Semanal Base tomando el primer registro disponible de ese día
+    // 1. Inicializar Plantilla Semanal Base
     const mapaBase = {};
     DIAS_SEMANA_GENERICOS.forEach(dia => {
-      const existente = data?.find(r => r.dia_semana === dia);
+      const existente = data?.find(r => r.dia_semana === dia && !r.fecha_especifica);
       mapaBase[dia] = {
         dia_semana: dia,
         bloqueado_todo_el_dia: existente ? Boolean(existente.bloqueado_todo_el_dia) : (dia === 'Sábado' || dia === 'Domingo'),
@@ -145,7 +145,7 @@ export default function Disponibilidad({ usuarioId }) {
           usuario_id: usuarioId,
           mes_periodo: mesSeleccionado,
           dia_semana: d.nombreDia,
-          fecha_especifica: d.fecha, // Grabado estrictamente con fecha exacta para Calendario y futuros reportes
+          fecha_especifica: d.fecha, // Grabado estrictamente con fecha exacta para el Calendario y reportes
           bloqueado_todo_el_dia: Boolean(fuente.bloqueado_todo_el_dia),
           tramo_1_inicio: fuente.tramo_1_inicio || null,
           tramo_1_fin: fuente.tramo_1_fin || null,
@@ -167,7 +167,7 @@ export default function Disponibilidad({ usuarioId }) {
 
       setMensaje('¡Configuración guardada y sincronizada correctamente!');
       setTimeout(() => setMensaje(''), 4000);
-      cargarDatos(mesSeleccionado);
+      // Nota: Se elimina cargarDatos(mesSeleccionado) aquí para evitar que el estado local se sobrescriba y pierda los cambios visuales.
     } catch (err) {
       console.error('Error al guardar:', err.message);
       setMensaje('Error al guardar: ' + err.message);

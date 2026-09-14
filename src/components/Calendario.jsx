@@ -13,10 +13,15 @@ export default function Calendario({ usuarioId }) {
   const [citas, setCitas] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
   
-  const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30' });
-  
-  // Generamos las 24 horas del día (de 00:00 a 23:00) para el scroll vertical completo
-  const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+  // Estado para la jornada y parámetros de sesión del Chair
+  const [jornadaChair, setJornadaChair] = useState({ 
+    inicio: '08:30', 
+    fin: '22:30',
+    duracionSesion: 60,
+    buffer: 15
+  });
+
+  const [horasDelDia, setHorasDelDia] = useState([]);
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
@@ -69,6 +74,48 @@ export default function Calendario({ usuarioId }) {
     setDiasSemanaMes(listaDiasTotal);
   }, [mesSeleccionado, vistaEscala]);
 
+  // Generar dinámicamente las filas de tiempo basadas en la duración de la sesión + buffer
+  useEffect(() => {
+    const aMinutos = (strHora) => {
+      if (!strHora) return 510; // Default 08:30
+      const partes = strHora.split(':');
+      return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
+    };
+
+    const minInicioJornada = aMinutos(jornadaChair.inicio);
+    const minFinJornada = aMinutos(jornadaChair.fin);
+    
+    // Intervalo total de cada bloque = Duración de sesión + Buffer (mínimo 15 min para evitar bucles infinitos)
+    const intervaloMinutos = Number(jornadaChair.duracionSesion) + Number(jornadaChair.buffer);
+    const paso = intervaloMinutos > 0 ? intervaloMinutos : 60;
+
+    let listaFranjas = [];
+    let currentMin = minInicioJornada;
+
+    while (currentMin < minFinJornada) {
+      const hIni = Math.floor(currentMin / 60);
+      const mIni = currentMin % 60;
+      
+      const finBloqueMin = currentMin + Number(jornadaChair.duracionSesion);
+      const hFin = Math.floor(finBloqueMin / 60);
+      const mFin = finBloqueMin % 60;
+
+      const horaInicioStr = `${String(hIni).padStart(2, '0')}:${String(mIni).padStart(2, '0')}`;
+      const horaFinStr = `${String(hFin).padStart(2, '0')}:${String(mFin).padStart(2, '0')}`;
+
+      listaFranjas.push({
+        etiqueta: `${horaInicioStr} - ${horaFinStr}`,
+        minInicio: currentMin,
+        minFin: finBloqueMin,
+        horaPuraInicio: horaInicioStr
+      });
+
+      currentMin += paso;
+    }
+
+    setHorasDelDia(listaFranjas);
+  }, [jornadaChair]);
+
   useEffect(() => {
     if (usuarioId && diasSemanaMes.length > 0) {
       cargarDatosSupabase();
@@ -79,14 +126,16 @@ export default function Calendario({ usuarioId }) {
     try {
       const { data: configData } = await supabase
         .from('agd_configuracion_chair')
-        .select('jornada_inicio, jornada_fin')
+        .select('jornada_inicio, jornada_fin, duracion_sesion_minutos, tiempo_buffer_minutos')
         .eq('usuario_id', usuarioId)
         .single();
 
       if (configData) {
         setJornadaChair({
           inicio: configData.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30',
-          fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30'
+          fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30',
+          duracionSesion: configData.duracion_sesion_minutos || 60,
+          buffer: configData.tiempo_buffer_minutos || 15
         });
       }
 
@@ -126,20 +175,18 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  const esDisponible = (fecha, hora) => {
+  const esDisponible = (fecha, franja) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
       const partes = strHora.split(':');
       return parseInt(partes[0] || 0, 10) * 60 + parseInt(partes[1] || 0, 10);
     };
 
-    const minCeldaInicio = aMinutos(hora);
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
-    const minCeldaFin = minCeldaInicio + 60;
 
-    // 1. Si la celda está fuera del rango global configurado en Jornada y País -> Bloqueado (Gris)
-    if (minCeldaInicio < minJornadaIni || minCeldaInicio >= minJornadaFin) {
+    // 1. Si el bloque está fuera de la jornada global -> Bloqueado
+    if (franja.minInicio < minJornadaIni || franja.minFin > minJornadaFin) {
       return false; 
     }
 
@@ -166,7 +213,8 @@ export default function Calendario({ usuarioId }) {
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
-        if (minCeldaInicio < minFinTramo && minCeldaFin > minInicioTramo) {
+        // Validación de cruce con la restricción
+        if (franja.minInicio < minFinTramo && franja.minFin > minInicioTramo) {
           return false; // Cae en restricción -> Bloqueado (Gris)
         }
       }
@@ -175,8 +223,8 @@ export default function Calendario({ usuarioId }) {
     return true;
   };
 
-  const abrirModalParaCelda = (dia, hora, citaEncontrada = null) => {
-    const disponible = esDisponible(dia.fecha, hora);
+  const abrirModalParaFranja = (dia, franja, citaEncontrada = null) => {
+    const disponible = esDisponible(dia.fecha, franja);
     if (!disponible && !citaEncontrada) return;
 
     setDiaSeleccionado(dia);
@@ -186,15 +234,21 @@ export default function Calendario({ usuarioId }) {
       setTipoSession(citaEncontrada.tipo_sesion || 'Individual');
       setEmpresarioId(citaEncontrada.empresario_id || '');
       setNombreGrupo(citaEncontrada.nombre_grupo || '');
-      setHoraInicio(citaEncontrada.hora_inicio || hora);
+      setHoraInicio(citaEncontrada.hora_inicio || franja.horaPuraInicio);
       setHoraFin(citaEncontrada.hora_fin || '');
       setLinkZoom(citaEncontrada.link_zoom || '');
       setEstadoCita(citaEncontrada.estado || 'confirmado');
     } else {
       setCitaExistenteId(null);
-      setHoraInicio(hora);
-      const [h] = hora.split(':');
-      setHoraFin(`${String(parseInt(h) + 1).padStart(2, '0')}:00`);
+      setHoraInicio(franja.horaPuraInicio);
+      
+      // Calculamos hora fin basada en la duración de la sesión configurada
+      const [h, m] = franja.horaPuraInicio.split(':').map(Number);
+      const totalMinFin = h * 60 + m + Number(jornadaChair.duracionSesion);
+      const hFinCalc = Math.floor(totalMinFin / 60);
+      const mFinCalc = totalMinFin % 60;
+      setHoraFin(`${String(hFinCalc).padStart(2, '0')}:${String(mFinCalc).padStart(2, '0')}`);
+
       setTipoSession('Individual');
       setEmpresarioId('');
       setNombreGrupo('');
@@ -281,9 +335,9 @@ export default function Calendario({ usuarioId }) {
   };
 
   const estilosEscala = {
-    fontSize: vistaEscala === 'trimestre' ? '0.45rem' : '0.7rem',
-    minWidth: vistaEscala === 'trimestre' ? '22px' : '45px',
-    height: vistaEscala === 'trimestre' ? '22px' : '32px'
+    fontSize: vistaEscala === 'trimestre' ? '0.4rem' : '0.65rem',
+    minWidth: vistaEscala === 'trimestre' ? '22px' : '55px',
+    height: vistaEscala === 'trimestre' ? '22px' : '35px'
   };
 
   return (
@@ -327,12 +381,11 @@ export default function Calendario({ usuarioId }) {
         <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
       </div>
 
-      {/* Contenedor con Scroll Vertical para las 24 horas */}
       <div style={estilos.tablaContainer}>
         <table style={{ ...estilos.tabla, fontSize: estilosEscala.fontSize }}>
           <thead>
             <tr>
-              <th style={estilos.thHora}>Hora</th>
+              <th style={estilos.thHora}>Horario</th>
               {diasSemanaMes.map(d => (
                 <th key={d.fecha} style={{ ...estilos.thDia, minWidth: estilosEscala.minWidth }}>
                   {d.nombreDia.slice(0, 3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span>
@@ -341,43 +394,61 @@ export default function Calendario({ usuarioId }) {
             </tr>
           </thead>
           <tbody>
-            {horasDelDia.map(hora => (
-              <tr key={hora}>
-                <td style={estilos.tdHora}>{hora}</td>
-                {diasSemanaMes.map(d => {
-                  const disponible = esDisponible(d.fecha, hora);
-                  const citaEncontrada = citas.find(c => c.fecha_cita === d.fecha && hora >= c.hora_inicio && hora < c.hora_fin);
+            {horasDelDia.map(franja => {
+              const citaEncontradaGlobal = (fecha) => {
+                return citas.find(c => {
+                  if (c.fecha_cita !== fecha) return false;
+                  // Comparamos traslape exacto de minutos con la cita
+                  const [hIniC] = c.hora_inicio.split(':').map(Number);
+                  const [mIniC] = (c.hora_inicio.split(':')[1] || '0').split(':').map(Number);
+                  const minIniC = hIniC * 60 + mIniC;
 
-                  let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
-                  
-                  if (citaEncontrada) {
-                    if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
-                    else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
-                    else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
-                  } else if (disponible) {
-                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
-                    estiloCelda.cursor = 'pointer';
-                  } else {
-                    estiloCelda.backgroundColor = '#EAEAEA';
-                    estiloCelda.cursor = 'not-allowed';
-                  }
+                  const [hFinC] = c.hora_fin.split(':').map(Number);
+                  const [mFinC] = (c.hora_fin.split(':')[1] || '0').split(':').map(Number);
+                  const minFinC = hFinC * 60 + mFinC;
 
-                  return (
-                    <td 
-                      key={d.fecha} 
-                      style={estiloCelda}
-                      onClick={() => abrirModalParaCelda(d, hora, citaEncontrada)}
-                    >
-                      {citaEncontrada ? (
-                        <span style={{ ...estilos.textoCita, fontSize: vistaEscala === 'trimestre' ? '0.35rem' : '0.55rem' }}>
-                          {citaEncontrada.estado.toUpperCase().substring(0, 3)}
-                        </span>
-                      ) : null}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                  return franja.minInicio < minFinC && franja.minFin > minIniC;
+                });
+              };
+
+              return (
+                <tr key={franja.etiqueta}>
+                  <td style={estilos.tdHora}>{franja.etiqueta}</td>
+                  {diasSemanaMes.map(d => {
+                    const disponible = esDisponible(d.fecha, franja);
+                    const citaEncontrada = citaEncontradaGlobal(d.fecha);
+
+                    let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
+                    
+                    if (citaEncontrada) {
+                      if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
+                      else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
+                      else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
+                    } else if (disponible) {
+                      estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                      estiloCelda.cursor = 'pointer';
+                    } else {
+                      estiloCelda.backgroundColor = '#EAEAEA';
+                      estiloCelda.cursor = 'not-allowed';
+                    }
+
+                    return (
+                      <td 
+                        key={d.fecha} 
+                        style={estiloCelda}
+                        onClick={() => abrirModalParaFranja(d, franja, citaEncontrada)}
+                      >
+                        {citaEncontrada ? (
+                          <span style={{ ...estilos.textoCita, fontSize: vistaEscala === 'trimestre' ? '0.35rem' : '0.50rem' }}>
+                            {citaEncontrada.estado.toUpperCase().substring(0, 3)}
+                          </span>
+                        ) : null}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -512,13 +583,12 @@ const estilos = {
   btnZoom: { padding: '6px 10px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
-  // Contenedor con altura fija y scroll vertical para ver las 24 horas cómodamente
   tablaContainer: { maxHeight: '550px', overflowY: 'auto', overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
   tabla: { width: '100%', borderCollapse: 'collapse' },
-  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px', position: 'sticky', top: 0, zIndex: 2 },
+  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '75px', position: 'sticky', top: 0, zIndex: 2 },
   thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', position: 'sticky', top: 0, zIndex: 2 },
   numDia: { fontWeight: 'bold' },
-  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
+  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.65rem' },
   tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE' },
   textoCita: { color: '#333', fontWeight: 'bold' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },

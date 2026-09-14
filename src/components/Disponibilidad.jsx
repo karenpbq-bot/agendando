@@ -8,8 +8,18 @@ export default function Disponibilidad({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
-  const [modo, setModo] = useState('base'); // 'base' para plantilla semanal, 'fechas' para excepciones puntuales
+  const [modo, setModo] = useState('config'); // 'config' para ajustes globales, 'base' para plantilla, 'fechas' para excepciones
   
+  // Estados de Configuración Global del Chair
+  const [configChair, setConfigChair] = useState({
+    pais: 'Peru',
+    jornada_inicio: '08:30',
+    jornada_fin: '22:30',
+    aplicar_feriados_nacionales: true,
+    duracion_sesion_minutos: 60,
+    tiempo_buffer_minutos: 15
+  });
+
   const [plantillaSemanal, setPlantillaSemanal] = useState({});
   const [excepcionesFechas, setExcepcionesFechas] = useState({});
   const [diasDelMes, setDiasDelMes] = useState([]);
@@ -19,12 +29,32 @@ export default function Disponibilidad({ usuarioId }) {
 
   useEffect(() => {
     if (usuarioId && mesSeleccionado) {
-      cargarDatos(mesSeleccionado);
+      cargarTodo(mesSeleccionado);
     }
   }, [usuarioId, mesSeleccionado]);
 
-  const cargarDatos = async (mesStr) => {
+  const cargarTodo = async (mesStr) => {
     setCargando(true);
+    
+    // 1. Cargar Configuración Global del Chair
+    const { data: configData } = await supabase
+      .from('agd_configuracion_chair')
+      .select('*')
+      .eq('usuario_id', usuarioId)
+      .single();
+
+    if (configData) {
+      setConfigChair({
+        pais: configData.pais || 'Peru',
+        jornada_inicio: configData.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30',
+        jornada_fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30',
+        aplicar_feriados_nacionales: configData.aplicar_feriados_nacionales ?? true,
+        duracion_sesion_minutos: configData.duracion_sesion_minutos || 60,
+        tiempo_buffer_minutos: configData.tiempo_buffer_minutos || 15
+      });
+    }
+
+    // 2. Generar días del mes seleccionado
     const [anio, mes] = mesStr.split('-').map(Number);
     const ultimoDia = new Date(anio, mes, 0).getDate();
     const listaDias = [];
@@ -42,37 +72,15 @@ export default function Disponibilidad({ usuarioId }) {
     }
     setDiasDelMes(listaDias);
 
-    // Consultar Supabase del mes para este usuario
+    // 3. Consultar Restricciones del mes
     const { data, error } = await supabase
       .from('agd_restricciones_disponibilidad')
       .select('*')
       .eq('usuario_id', usuarioId)
       .eq('mes_periodo', mesStr);
 
-    if (error) {
-      console.error('Error al cargar disponibilidad:', error.message);
-    }
+    if (error) console.error('Error al cargar disponibilidad:', error.message);
 
-    // 1. Inicializar Plantilla Semanal Base
-    const mapaBase = {};
-    DIAS_SEMANA_GENERICOS.forEach(dia => {
-      const existente = data?.find(r => r.dia_semana === dia && !r.fecha_especifica);
-      mapaBase[dia] = {
-        dia_semana: dia,
-        bloqueado_todo_el_dia: existente ? Boolean(existente.bloqueado_todo_el_dia) : (dia === 'Sábado' || dia === 'Domingo'),
-        tramo_1_inicio: existente?.tramo_1_inicio ? existente.tramo_1_inicio.substring(0, 5) : '00:00',
-        tramo_1_fin: existente?.tramo_1_fin ? existente.tramo_1_fin.substring(0, 5) : '08:00',
-        tramo_2_inicio: existente?.tramo_2_inicio ? existente.tramo_2_inicio.substring(0, 5) : '22:00',
-        tramo_2_fin: existente?.tramo_2_fin ? existente.tramo_2_fin.substring(0, 5) : '23:59',
-        tramo_3_inicio: existente?.tramo_3_inicio ? existente.tramo_3_inicio.substring(0, 5) : '',
-        tramo_3_fin: existente?.tramo_3_fin ? existente.tramo_3_fin.substring(0, 5) : '',
-        tramo_4_inicio: existente?.tramo_4_inicio ? existente.tramo_4_inicio.substring(0, 5) : '',
-        tramo_4_fin: existente?.tramo_4_fin ? existente.tramo_4_fin.substring(0, 5) : ''
-      };
-    });
-    setPlantillaSemanal(mapaBase);
-
-    // 2. Inicializar Excepciones por Fecha Específica exacta
     const mapaExcepciones = {};
     data?.forEach(r => {
       if (r.fecha_especifica) {
@@ -92,7 +100,53 @@ export default function Disponibilidad({ usuarioId }) {
     });
     setExcepcionesFechas(mapaExcepciones);
 
+    const mapaBase = {};
+    DIAS_SEMANA_GENERICOS.forEach(dia => {
+      const primerDiaDelTipo = listaDias.find(d => d.nombreDia === dia);
+      const registroBD = primerDiaDelTipo ? data?.find(r => r.fecha_especifica === primerDiaDelTipo.fecha) : null;
+
+      mapaBase[dia] = {
+        dia_semana: dia,
+        bloqueado_todo_el_dia: registroBD ? Boolean(registroBD.bloqueado_todo_el_dia) : (dia === 'Sábado' || dia === 'Domingo'),
+        tramo_1_inicio: registroBD?.tramo_1_inicio ? registroBD.tramo_1_inicio.substring(0, 5) : configChair.jornada_inicio,
+        tramo_1_fin: registroBD?.tramo_1_fin ? registroBD.tramo_1_fin.substring(0, 5) : configChair.jornada_fin,
+        tramo_2_inicio: registroBD?.tramo_2_inicio ? registroBD.tramo_2_inicio.substring(0, 5) : '',
+        tramo_2_fin: registroBD?.tramo_2_fin ? registroBD.tramo_2_fin.substring(0, 5) : '',
+        tramo_3_inicio: registroBD?.tramo_3_inicio ? registroBD.tramo_3_inicio.substring(0, 5) : '',
+        tramo_3_fin: registroBD?.tramo_3_fin ? registroBD.tramo_3_fin.substring(0, 5) : '',
+        tramo_4_inicio: registroBD?.tramo_4_inicio ? registroBD.tramo_4_inicio.substring(0, 5) : '',
+        tramo_4_fin: registroBD?.tramo_4_fin ? registroBD.tramo_4_fin.substring(0, 5) : ''
+      };
+    });
+    setPlantillaSemanal(mapaBase);
+
     setCargando(false);
+  };
+
+  const guardarConfiguracionGlobal = async (e) => {
+    e.preventDefault();
+    setCargando(true);
+    try {
+      const { error } = await supabase
+        .from('agd_configuracion_chair')
+        .upsert({
+          usuario_id: usuarioId,
+          pais: configChair.pais,
+          jornada_inicio: configChair.jornada_inicio,
+          jornada_fin: configChair.jornada_fin,
+          aplicar_feriados_nacionales: configChair.aplicar_feriados_nacionales,
+          duracion_sesion_minutos: Number(configChair.duracion_sesion_minutos),
+          tiempo_buffer_minutos: Number(configChair.tiempo_buffer_minutos)
+        }, { onConflict: 'usuario_id' });
+
+      if (error) throw error;
+      setMensaje('¡Configuración global guardada con éxito!');
+      setTimeout(() => setMensaje(''), 4000);
+    } catch (err) {
+      setMensaje('Error al guardar configuración: ' + err.message);
+    } finally {
+      setCargando(false);
+    }
   };
 
   const manejarCambioPlantilla = (dia, campo, valor) => {
@@ -128,7 +182,7 @@ export default function Disponibilidad({ usuarioId }) {
     setTimeout(() => setMensaje(''), 4000);
   };
 
-  const guardarConfiguracion = async (e) => {
+  const guardarRestriccionesMes = async (e) => {
     e.preventDefault();
     setCargando(true);
     setMensaje('');
@@ -143,6 +197,7 @@ export default function Disponibilidad({ usuarioId }) {
 
         payloadFinal.push({
           usuario_id: usuarioId,
+          tipo_regla: excepcion ? 'EXCEPCION_FECHA' : 'BASE_SEMANAL',
           mes_periodo: mesSeleccionado,
           dia_semana: d.nombreDia,
           fecha_especifica: d.fecha,
@@ -164,8 +219,9 @@ export default function Disponibilidad({ usuarioId }) {
 
       if (errorUpsert) throw errorUpsert;
 
-      setMensaje('¡Configuración guardada y sincronizada correctamente!');
+      setMensaje('¡Horarios del mes guardados y sincronizados correctamente!');
       setTimeout(() => setMensaje(''), 4000);
+      await cargarTodo(mesSeleccionado);
     } catch (err) {
       console.error('Error al guardar:', err.message);
       setMensaje('Error al guardar: ' + err.message);
@@ -177,10 +233,10 @@ export default function Disponibilidad({ usuarioId }) {
   return (
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Disponibilidad y Horarios</h2>
-      <p style={estilos.subtitulo}>Configura tu plantilla semanal base o aplica ajustes por fecha específica.</p>
+      <p style={estilos.subtitulo}>Configura tu jornada global, plantilla semanal o excepciones mensuales.</p>
 
       <div style={estilos.seccionMes}>
-        <label style={estilos.labelMes}>Seleccionar Mes:</label>
+        <label style={estilos.labelMes}>Mes de Gestión:</label>
         <input 
           type="month" 
           value={mesSeleccionado}
@@ -192,138 +248,227 @@ export default function Disponibilidad({ usuarioId }) {
       <div style={estilos.pestanasContainer}>
         <button 
           type="button" 
+          onClick={() => setModo('config')}
+          style={{ ...estilos.pestana, backgroundColor: modo === 'config' ? '#00A89F' : '#E0E0E0', color: modo === 'config' ? '#FFF' : '#333' }}
+        >
+          1. Jornada y País
+        </button>
+        <button 
+          type="button" 
           onClick={() => setModo('base')}
           style={{ ...estilos.pestana, backgroundColor: modo === 'base' ? '#00A89F' : '#E0E0E0', color: modo === 'base' ? '#FFF' : '#333' }}
         >
-          1. Plantilla Base Semanal
+          2. Plantilla Semanal
         </button>
         <button 
           type="button" 
           onClick={() => setModo('fechas')}
           style={{ ...estilos.pestana, backgroundColor: modo === 'fechas' ? '#00A89F' : '#E0E0E0', color: modo === 'fechas' ? '#FFF' : '#333' }}
         >
-          2. Ajustes por Fecha Específica
+          3. Excepciones por Fecha
         </button>
       </div>
 
-      <form onSubmit={guardarConfiguracion}>
-        
-        {modo === 'base' && (
-          <div>
-            <div style={estilos.barraAcciones}>
-              <button type="button" onClick={replicarLunesATodos} style={estilos.botonAccion}>
-                Replicar Lunes a Toda la Semana
-              </button>
+      {/* MODO 1: CONFIGURACIÓN GLOBAL */}
+      {modo === 'config' && (
+        <form onSubmit={guardarConfiguracionGlobal} style={estilos.tarjetaDia}>
+          <h3 style={{ fontSize: '0.9rem', color: '#00A89F', marginBottom: '10px' }}>Parámetros Globales del Chair</h3>
+          
+          <div style={estilos.grupoInput}>
+            <label style={estilos.label}>País de Operación</label>
+            <select 
+              value={configChair.pais} 
+              onChange={(e) => setConfigChair({...configChair, pais: e.target.value})}
+              style={estilos.input}
+            >
+              <option value="Peru">Perú</option>
+              <option value="Colombia">Colombia</option>
+              <option value="Chile">Chile</option>
+              <option value="Mexico">México</option>
+              <option value="Espana">España</option>
+            </select>
+          </div>
+
+          <div style={estilos.filaHorarios}>
+            <div style={estilos.grupoInput}>
+              <label style={estilos.label}>Inicio de Jornada</label>
+              <input 
+                type="time" 
+                value={configChair.jornada_inicio} 
+                onChange={(e) => setConfigChair({...configChair, jornada_inicio: e.target.value})}
+                style={estilos.input}
+              />
             </div>
-
-            {DIAS_SEMANA_GENERICOS.map(dia => {
-              const item = plantillaSemanal[dia] || {};
-              return (
-                <div key={dia} style={estilos.tarjetaDia}>
-                  <div style={estilos.cabeceraDia}>
-                    <span style={estilos.nombreDia}>{dia}</span>
-                    <label style={estilos.labelCheckbox}>
-                      <input 
-                        type="checkbox"
-                        checked={item.bloqueado_todo_el_dia || false}
-                        onChange={(e) => manejarCambioPlantilla(dia, 'bloqueado_todo_el_dia', e.target.checked)}
-                        style={estilos.checkbox}
-                      />
-                      Bloquear día
-                    </label>
-                  </div>
-
-                  {!item.bloqueado_todo_el_dia && (
-                    <div style={estilos.tramosContainer}>
-                      {[1, 2, 3, 4].map(num => (
-                        <div key={num} style={estilos.tramoRow}>
-                          <span style={estilos.tramoLabel}>T{num}</span>
-                          <div style={estilos.inputsTimeWrapper}>
-                            <input 
-                              type="time" 
-                              value={item[`tramo_${num}_inicio`] || ''}
-                              onChange={(e) => manejarCambioPlantilla(dia, `tramo_${num}_inicio`, e.target.value)}
-                              style={estilos.inputTime}
-                            />
-                            <span style={estilos.separadorHora}>a</span>
-                            <input 
-                              type="time" 
-                              value={item[`tramo_${num}_fin`] || ''}
-                              onChange={(e) => manejarCambioPlantilla(dia, `tramo_${num}_fin`, e.target.value)}
-                              style={estilos.inputTime}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            <div style={estilos.grupoInput}>
+              <label style={estilos.label}>Fin de Jornada</label>
+              <input 
+                type="time" 
+                value={configChair.jornada_fin} 
+                onChange={(e) => setConfigChair({...configChair, jornada_fin: e.target.value})}
+                style={estilos.input}
+              />
+            </div>
           </div>
-        )}
 
-        {modo === 'fechas' && (
-          <div>
-            <p style={estilos.avisoFechas}>Modifica únicamente los días que requieran excepciones puntuales (feriados, viajes, etc.).</p>
-            {diasDelMes.map(d => {
-              const item = excepcionesFechas[d.fecha] || plantillaSemanal[d.nombreDia] || {};
-              const tieneExcepcion = !!excepcionesFechas[d.fecha];
-
-              return (
-                <div key={d.fecha} style={{ ...estilos.tarjetaDia, borderColor: tieneExcepcion ? '#00A89F' : '#EAEAEA' }}>
-                  <div style={estilos.cabeceraDia}>
-                    <div style={estilos.infoDia}>
-                      <span style={estilos.badgeFecha}>{d.diaNumero}</span>
-                      <span style={estilos.nombreDia}>{d.nombreDia} ({d.fecha})</span>
-                    </div>
-                    <label style={estilos.labelCheckbox}>
-                      <input 
-                        type="checkbox"
-                        checked={item.bloqueado_todo_el_dia || false}
-                        onChange={(e) => manejarCambioExcepcion(d.fecha, 'bloqueado_todo_el_dia', e.target.checked)}
-                        style={estilos.checkbox}
-                      />
-                      Bloquear
-                    </label>
-                  </div>
-
-                  {!item.bloqueado_todo_el_dia && (
-                    <div style={estilos.tramosContainer}>
-                      {[1, 2, 3, 4].map(num => (
-                        <div key={num} style={estilos.tramoRow}>
-                          <span style={estilos.tramoLabel}>T{num}</span>
-                          <div style={estilos.inputsTimeWrapper}>
-                            <input 
-                              type="time" 
-                              value={item[`tramo_${num}_inicio`] || ''}
-                              onChange={(e) => manejarCambioExcepcion(d.fecha, `tramo_${num}_inicio`, e.target.value)}
-                              style={estilos.inputTime}
-                            />
-                            <span style={estilos.separadorHora}>a</span>
-                            <input 
-                              type="time" 
-                              value={item[`tramo_${num}_fin`] || ''}
-                              onChange={(e) => manejarCambioExcepcion(d.fecha, `tramo_${num}_fin`, e.target.value)}
-                              style={estilos.inputTime}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div style={estilos.filaHorarios}>
+            <div style={estilos.grupoInput}>
+              <label style={estilos.label}>Duración Sesión (min)</label>
+              <input 
+                type="number" 
+                value={configChair.duracion_sesion_minutos} 
+                onChange={(e) => setConfigChair({...configChair, duracion_sesion_minutos: e.target.value})}
+                style={estilos.input}
+              />
+            </div>
+            <div style={estilos.grupoInput}>
+              <label style={estilos.label}>Buffer / Descanso (min)</label>
+              <input 
+                type="number" 
+                value={configChair.tiempo_buffer_minutos} 
+                onChange={(e) => setConfigChair({...configChair, tiempo_buffer_minutos: e.target.value})}
+                style={estilos.input}
+              />
+            </div>
           </div>
-        )}
 
-        {mensaje && <p style={estilos.mensaje}>{mensaje}</p>}
+          <div style={{ ...estilos.grupoCheckbox, marginTop: '10px' }}>
+            <input 
+              type="checkbox" 
+              checked={configChair.aplicar_feriados_nacionales} 
+              onChange={(e) => setConfigChair({...configChair, aplicar_feriados_nacionales: e.target.checked})}
+              id="feriados"
+            />
+            <label htmlFor="feriados" style={estilos.labelCheck}>Bloquear automáticamente Feriados Nacionales del país</label>
+          </div>
 
-        <button type="submit" disabled={cargando} style={estilos.botonGuardar}>
-          {cargando ? 'Guardando...' : 'Guardar Toda la Configuración'}
-        </button>
-      </form>
+          {mensaje && <p style={estilos.mensaje}>{mensaje}</p>}
+
+          <button type="submit" disabled={cargando} style={estilos.botonGuardar}>
+            {cargando ? 'Guardando...' : 'Guardar Jornada y País'}
+          </button>
+        </form>
+      )}
+
+      {/* MODO 2 Y 3: PLANTILLA Y EXCEPCIONES */}
+      {(modo === 'base' || modo === 'fechas') && (
+        <form onSubmit={guardarRestriccionesMes}>
+          {modo === 'base' && (
+            <div>
+              <div style={estilos.barraAcciones}>
+                <button type="button" onClick={replicarLunesATodos} style={estilos.botonAccion}>
+                  Replicar Lunes a Toda la Semana
+                </button>
+              </div>
+
+              {DIAS_SEMANA_GENERICOS.map(dia => {
+                const item = plantillaSemanal[dia] || {};
+                return (
+                  <div key={dia} style={estilos.tarjetaDia}>
+                    <div style={estilos.cabeceraDia}>
+                      <span style={estilos.nombreDia}>{dia}</span>
+                      <label style={estilos.labelCheckbox}>
+                        <input 
+                          type="checkbox"
+                          checked={item.bloqueado_todo_el_dia || false}
+                          onChange={(e) => manejarCambioPlantilla(dia, 'bloqueado_todo_el_dia', e.target.checked)}
+                          style={estilos.checkbox}
+                        />
+                        Bloquear día
+                      </label>
+                    </div>
+
+                    {!item.bloqueado_todo_el_dia && (
+                      <div style={estilos.tramosContainer}>
+                        {[1, 2, 3, 4].map(num => (
+                          <div key={num} style={estilos.tramoRow}>
+                            <span style={estilos.tramoLabel}>T{num}</span>
+                            <div style={estilos.inputsTimeWrapper}>
+                              <input 
+                                type="time" 
+                                value={item[`tramo_${num}_inicio`] || ''}
+                                onChange={(e) => manejarCambioPlantilla(dia, `tramo_${num}_inicio`, e.target.value)}
+                                style={estilos.inputTime}
+                              />
+                              <span style={estilos.separadorHora}>a</span>
+                              <input 
+                                type="time" 
+                                value={item[`tramo_${num}_fin`] || ''}
+                                onChange={(e) => manejarCambioPlantilla(dia, `tramo_${num}_fin`, e.target.value)}
+                                style={estilos.inputTime}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {modo === 'fechas' && (
+            <div>
+              <p style={estilos.avisoFechas}>Ajusta únicamente los días específicos del mes que requieran excepciones (viajes, feriados personalizados, etc.).</p>
+              {diasDelMes.map(d => {
+                const item = excepcionesFechas[d.fecha] || plantillaSemanal[d.nombreDia] || {};
+                const tieneExcepcion = !!excepcionesFechas[d.fecha];
+
+                return (
+                  <div key={d.fecha} style={{ ...estilos.tarjetaDia, borderColor: tieneExcepcion ? '#00A89F' : '#EAEAEA' }}>
+                    <div style={estilos.cabeceraDia}>
+                      <div style={estilos.infoDia}>
+                        <span style={estilos.badgeFecha}>{d.diaNumero}</span>
+                        <span style={estilos.nombreDia}>{d.nombreDia} ({d.fecha})</span>
+                      </div>
+                      <label style={estilos.labelCheckbox}>
+                        <input 
+                          type="checkbox"
+                          checked={item.bloqueado_todo_el_dia || false}
+                          onChange={(e) => manejarCambioExcepcion(d.fecha, 'bloqueado_todo_el_dia', e.target.checked)}
+                          style={estilos.checkbox}
+                        />
+                        Bloquear
+                      </label>
+                    </div>
+
+                    {!item.bloqueado_todo_el_dia && (
+                      <div style={estilos.tramosContainer}>
+                        {[1, 2, 3, 4].map(num => (
+                          <div key={num} style={estilos.tramoRow}>
+                            <span style={estilos.tramoLabel}>T{num}</span>
+                            <div style={estilos.inputsTimeWrapper}>
+                              <input 
+                                type="time" 
+                                value={item[`tramo_${num}_inicio`] || ''}
+                                onChange={(e) => manejarCambioExcepcion(d.fecha, `tramo_${num}_inicio`, e.target.value)}
+                                style={estilos.inputTime}
+                              />
+                              <span style={estilos.separadorHora}>a</span>
+                              <input 
+                                type="time" 
+                                value={item[`tramo_${num}_fin`] || ''}
+                                onChange={(e) => manejarCambioExcepcion(d.fecha, `tramo_${num}_fin`, e.target.value)}
+                                style={estilos.inputTime}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {mensaje && <p style={estilos.mensaje}>{mensaje}</p>}
+
+          <button type="submit" disabled={cargando} style={estilos.botonGuardar}>
+            {cargando ? 'Guardando...' : 'Guardar Horarios del Mes'}
+          </button>
+        </form>
+      )}
     </div>
   );
 }
@@ -335,8 +480,8 @@ const estilos = {
   seccionMes: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px', backgroundColor: '#FFFFFF', padding: '10px', borderRadius: '8px', border: '1px solid #EAEAEA', boxSizing: 'border-box' },
   labelMes: { fontSize: '0.8rem', fontWeight: 'bold', color: '#444' },
   inputMes: { padding: '8px', borderRadius: '6px', border: '1px solid #CCCCCC', fontSize: '0.85rem', backgroundColor: '#FAFAFA', width: '100%', boxSizing: 'border-box' },
-  pestanasContainer: { display: 'flex', gap: '5px', marginBottom: '12px' },
-  pestana: { flex: 1, padding: '8px 4px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center' },
+  pestanasContainer: { display: 'flex', gap: '4px', marginBottom: '12px' },
+  pestana: { flex: 1, padding: '8px 2px', borderRadius: '6px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer', textAlign: 'center' },
   barraAcciones: { marginBottom: '10px' },
   botonAccion: { width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #00A89F', backgroundColor: '#EBF5F7', color: '#00A89F', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
   avisoFechas: { fontSize: '0.75rem', color: '#666', marginBottom: '10px', textAlign: 'center', fontStyle: 'italic' },
@@ -354,5 +499,11 @@ const estilos = {
   inputTime: { padding: '5px 2px', borderRadius: '4px', border: '1px solid #CCCCCC', fontSize: '0.75rem', backgroundColor: '#FAFAFA', width: '42%', maxWidth: '95px', textAlign: 'center', boxSizing: 'border-box' },
   separadorHora: { color: '#888', fontSize: '0.75rem', flexShrink: '0' },
   mensaje: { fontSize: '0.8rem', color: '#00A89F', fontWeight: 'bold', textAlign: 'center', margin: '10px 0' },
+  grupoInput: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' },
+  label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
+  input: { padding: '8px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' },
+  filaHorarios: { display: 'flex', gap: '8px' },
+  grupoCheckbox: { display: 'flex', alignItems: 'center', gap: '6px' },
+  labelCheck: { fontSize: '0.75rem', color: '#333', cursor: 'pointer' },
   botonGuardar: { width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0, 168, 159, 0.2)', marginTop: '10px', boxSizing: 'border-box' }
 };

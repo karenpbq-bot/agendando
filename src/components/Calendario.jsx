@@ -172,37 +172,32 @@ export default function Calendario({ usuarioId }) {
 
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
-  const esDisponible = (fecha, nombreDia, hora) => {
-    // 1. Buscar regla específica para la fecha o buscar la plantilla base del día de la semana
-    const restriccionFecha = restricciones.find(r => r.fecha_especifica === fecha);
-    const restriccionBase = restricciones.find(r => r.dia_semana === nombreDia);
-    
-    const restAConsultar = restriccionFecha || restriccionBase;
+  const esDisponible = (fecha, hora) => {
+    // Buscar la restricción de Supabase que coincida exactamente con la fecha de la celda
+    const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
 
-    // Si no hay ninguna restricción configurada, por defecto está disponible
-    if (!restAConsultar) return true;
+    // Si no hay registro para esta fecha, por defecto está disponible
+    if (!restriccionDia) return true;
 
-    // Si el día entero está bloqueado
-    if (restAConsultar.bloqueado_todo_el_dia) return false;
+    // Si el día entero está bloqueado (marcado con TRUE)
+    if (restriccionDia.bloqueado_todo_el_dia === true) {
+      return false;
+    }
 
-    // Normalizar la hora actual de la celda a formato numérico o de comparación segura (ej. "08:00")
     const horaCelda = hora.trim();
-
-    // Comprobar si la hora de la celda cae dentro de alguno de los 4 tramos de NO disponibilidad
     const tramos = [
-      { i: restAConsultar.tramo_1_inicio, f: restAConsultar.tramo_1_fin },
-      { i: restAConsultar.tramo_2_inicio, f: restAConsultar.tramo_2_fin },
-      { i: restAConsultar.tramo_3_inicio, f: restAConsultar.tramo_3_fin },
-      { i: restAConsultar.tramo_4_inicio, f: restAConsultar.tramo_4_fin },
+      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
+      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
+      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
+      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
     ];
 
     for (let t of tramos) {
       if (t.i && t.f) {
-        // Limpiar segundos si los hubiera (ej "08:00:00" a "08:00")
         const inicio = t.i.substring(0, 5);
         const fin = t.f.substring(0, 5);
 
-        // Si la hora de la celda está dentro del rango restringido, NO está disponible (retorna false)
+        // Si la hora de la celda está dentro de un tramo restringido, NO está disponible
         if (horaCelda >= inicio && horaCelda < fin) {
           return false;
         }
@@ -211,7 +206,6 @@ export default function Calendario({ usuarioId }) {
 
     return true;
   };
-
   return (
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Calendario de Sesiones</h2>
@@ -251,7 +245,7 @@ export default function Calendario({ usuarioId }) {
               <tr key={hora}>
                 <td style={estilos.tdHora}>{hora}</td>
                 {diasSemanaMes.map(d => {
-                  const disponible = esDisponible(d.fecha, d.nombreDia, hora);
+                  const disponible = esDisponible(d.fecha, hora);
                   const citaEncontrada = citas.find(c => c.fecha_cita === d.fecha && hora >= c.hora_inicio && hora < c.hora_fin);
 
                   let estiloCelda = { ...estilos.tdCelda };

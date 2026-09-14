@@ -102,38 +102,15 @@ export default function Calendario({ usuarioId }) {
   };
 
   const esDisponible = (fecha, hora) => {
-    const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
-    if (!restriccionDia) return true;
-    if (restriccionDia.bloqueado_todo_el_dia === true) return false;
-
-    const horaCelda = hora.trim();
-    const tramos = [
-      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
-      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
-      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
-      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
-    ];
-
-    let tieneTramosDefinidos = false;
-    let estaEnAlgunTramoValido = false;
-
-    for (let t of tramos) {
-      if (t.i && t.f) {
-        tieneTramosDefinidos = true;
-        const inicio = t.i.substring(0, 5);
-        const fin = t.f.substring(0, 5);
-
-        if (horaCelda >= inicio && horaCelda < fin) {
-          estaEnAlgunTramoValido = true;
-          break;
-        }
-      }
-    }
-
-    if (tieneTramosDefinidos && !estaEnAlgunTramoValido) {
+    // PRUEBA VISUAL: Bloquear estrictamente todo lo que esté fuera de 10:00 a 17:00
+    const horaNum = parseInt(hora.split(':')[0], 10);
+    
+    // Si la hora es menor a 10 o mayor o igual a 17, se marca como RESTRINGIDA (false -> gris)
+    if (horaNum < 10 || horaNum >= 17) {
       return false;
     }
 
+    // Lo demás queda HABILITADO (true -> amarillo)
     return true;
   };
 

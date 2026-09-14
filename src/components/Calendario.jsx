@@ -6,6 +6,8 @@ export default function Calendario({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
+  const [vistaEscala, setVistaEscala] = useState('mes'); // 'semana-zoom', 'mes', 'trimestre'
+  
   const [diasSemanaMes, setDiasSemanaMes] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
   const [citas, setCitas] = useState([]);
@@ -28,30 +30,47 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
+  // Generador de días según la vista seleccionada (1 mes o ventana de 3 meses: anterior, actual, próximo)
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
-    const ultimoDia = new Date(anio, mes, 0).getDate();
-    const listaDias = [];
-    
-    for (let d = 1; d <= ultimoDia; d++) {
-      const fechaObj = new Date(anio, mes - 1, d);
-      const fechaFormateada = `${anio}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const nombreDia = fechaObj.toLocaleDateString('es-ES', { weekday: 'long' });
+    let mesesAProcesar = [mesSeleccionado];
+
+    if (vistaEscala === 'trimestre') {
+      const fechaAnterior = new Date(anio, mes - 2, 1);
+      const fechaProxima = new Date(anio, mes, 1);
       
-      listaDias.push({
-        fecha: fechaFormateada,
-        diaNumero: String(d).padStart(2, '0'),
-        nombreDia: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)
-      });
+      const mesAntStr = `${fechaAnterior.getFullYear()}-${String(fechaAnterior.getMonth() + 1).padStart(2, '0')}`;
+      const mesProxStr = `${fechaProxima.getFullYear()}-${String(fechaProxima.getMonth() + 1).padStart(2, '0')}`;
+      
+      mesesAProcesar = [mesAntStr, mesSeleccionado, mesProxStr];
     }
-    setDiasSemanaMes(listaDias);
-  }, [mesSeleccionado]);
+
+    let listaDiasTotal = [];
+    mesesAProcesar.forEach(mStr => {
+      const [y, m] = mStr.split('-').map(Number);
+      const ultimoDia = new Date(y, m, 0).getDate();
+      for (let d = 1; d <= ultimoDia; d++) {
+        const fechaObj = new Date(y, m - 1, d);
+        const fechaFormateada = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const nombreDia = fechaObj.toLocaleDateString('es-ES', { weekday: 'long' });
+        
+        listaDiasTotal.push({
+          fecha: fechaFormateada,
+          mesPeriodo: mStr,
+          diaNumero: String(d).padStart(2, '0'),
+          nombreDia: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)
+        });
+      }
+    });
+
+    setDiasSemanaMes(listaDiasTotal);
+  }, [mesSeleccionado, vistaEscala]);
 
   useEffect(() => {
     if (usuarioId) {
       cargarDatosSupabase();
     }
-  }, [usuarioId, mesSeleccionado]);
+  }, [usuarioId, mesSeleccionado, vistaEscala]);
 
   const cargarDatosSupabase = async () => {
     try {
@@ -61,11 +80,22 @@ export default function Calendario({ usuarioId }) {
         .eq('rol', 'Empresario');
       if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
+      const [anio, mes] = mesSeleccionado.split('-').map(Number);
+      let mesesFiltro = [mesSeleccionado];
+      if (vistaEscala === 'trimestre') {
+        const fAnt = new Date(anio, mes - 2, 1);
+        const fProx = new Date(anio, mes, 1);
+        mesesFiltro.push(
+          `${fAnt.getFullYear()}-${String(fAnt.getMonth() + 1).padStart(2, '0')}`,
+          `${fProx.getFullYear()}-${String(fProx.getMonth() + 1).padStart(2, '0')}`
+        );
+      }
+
       const { data: dataRest } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
         .eq('usuario_id', usuarioId)
-        .eq('mes_periodo', mesSeleccionado);
+        .in('mes_periodo', mesesFiltro);
       if (dataRest) setRestricciones(dataRest);
 
       const { data: dataCitas } = await supabase
@@ -105,6 +135,18 @@ export default function Calendario({ usuarioId }) {
     setModalAbierto(true);
   };
 
+  // Autocompletado inteligente de Zoom al seleccionar Empresario
+  const seleccionarEmpresario = (idEmp) => {
+    setEmpresarioId(idEmp);
+    if (idEmp) {
+      // Buscar si el empresario ya tiene un link recurrente en citas previas
+      const ultimaCitaEmpresario = citas.find(c => c.empresario_id == idEmp && c.link_zoom);
+      if (ultimaCitaEmpresario) {
+        setLinkZoom(ultimaCitaEmpresario.link_zoom);
+      }
+    }
+  };
+
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
@@ -134,7 +176,7 @@ export default function Calendario({ usuarioId }) {
         if (replicarMes) {
           const nombreDiaObjetivo = diaSeleccionado.nombreDia;
           diasSemanaMes.forEach(d => {
-            if (d.nombreDia === nombreDiaObjetivo && d.fecha !== diaSeleccionado.fecha) {
+            if (d.nombreDia === nombreDiaObjetivo && d.fecha !== diaSeleccionado.fecha && d.mesPeriodo === diaSeleccionado.mesPeriodo) {
               fechasAGuardar.push(d.fecha);
             }
           });
@@ -161,7 +203,7 @@ export default function Calendario({ usuarioId }) {
       cargarDatosSupabase();
       
       if (telefonoDestino && estadoCita !== 'cancelado') {
-        const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado en estado *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom}. Por favor, confírmanos tu asistencia.`);
+        const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado en estado *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom}.`);
         window.open(`https://wa.me/${telefonoDestino}?text=${textoWs}`, '_blank');
       }
 
@@ -173,16 +215,9 @@ export default function Calendario({ usuarioId }) {
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
   const esDisponible = (fecha, hora) => {
-    // Buscar la restricción de Supabase que coincida exactamente con la fecha de la celda
     const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
-
-    // Si no hay registro para esta fecha, por defecto está disponible
     if (!restriccionDia) return true;
-
-    // Si el día entero está bloqueado (marcado con TRUE)
-    if (restriccionDia.bloqueado_todo_el_dia === true) {
-      return false;
-    }
+    if (restriccionDia.bloqueado_todo_el_dia === true) return false;
 
     const horaCelda = hora.trim();
     const tramos = [
@@ -196,27 +231,46 @@ export default function Calendario({ usuarioId }) {
       if (t.i && t.f) {
         const inicio = t.i.substring(0, 5);
         const fin = t.f.substring(0, 5);
-
-        // Si la hora de la celda está dentro de un tramo restringido, NO está disponible
-        if (horaCelda >= inicio && horaCelda < fin) {
-          return false;
-        }
+        if (horaCelda >= inicio && horaCelda < fin) return false;
       }
     }
-
     return true;
   };
+
+  // Tamaños dinámicos según el nivel de Zoom / Escala seleccionado
+  const estilosEscala = {
+    fontSize: vistaEscala === 'trimestre' ? '0.5rem' : '0.7rem',
+    minWidth: vistaEscala === 'trimestre' ? '28px' : '45px',
+    height: vistaEscala === 'trimestre' ? '26px' : '32px'
+  };
+
   return (
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Calendario de Sesiones</h2>
       
-      <div style={estilos.seccionMes}>
+      <div style={estilos.controlesSuperiores}>
         <input 
           type="month" 
           value={mesSeleccionado}
           onChange={(e) => setMesSeleccionado(e.target.value)}
           style={estilos.inputMes}
         />
+        <div style={estilos.zoomContainer}>
+          <button 
+            type="button" 
+            onClick={() => setVistaEscala('mes')}
+            style={{ ...estilos.btnZoom, backgroundColor: vistaEscala === 'mes' ? '#00A89F' : '#E0E0E0', color: vistaEscala === 'mes' ? '#FFF' : '#333' }}
+          >
+            Mes
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setVistaEscala('trimestre')}
+            style={{ ...estilos.btnZoom, backgroundColor: vistaEscala === 'trimestre' ? '#00A89F' : '#E0E0E0', color: vistaEscala === 'trimestre' ? '#FFF' : '#333' }}
+          >
+            Vista 3 Meses
+          </button>
+        </div>
       </div>
 
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
@@ -229,12 +283,12 @@ export default function Calendario({ usuarioId }) {
       </div>
 
       <div style={estilos.tablaContainer}>
-        <table style={estilos.tabla}>
+        <table style={{ ...estilos.tabla, fontSize: estilosEscala.fontSize }}>
           <thead>
             <tr>
               <th style={estilos.thHora}>Hora</th>
               {diasSemanaMes.map(d => (
-                <th key={d.fecha} style={estilos.thDia}>
+                <th key={d.fecha} style={{ ...estilos.thDia, minWidth: estilosEscala.minWidth }}>
                   {d.nombreDia.slice(0, 3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span>
                 </th>
               ))}
@@ -248,13 +302,13 @@ export default function Calendario({ usuarioId }) {
                   const disponible = esDisponible(d.fecha, hora);
                   const citaEncontrada = citas.find(c => c.fecha_cita === d.fecha && hora >= c.hora_inicio && hora < c.hora_fin);
 
-                  let estiloCelda = { ...estilos.tdCelda };
+                  let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
                   if (citaEncontrada) {
                     if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
                     else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
                     else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
-                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)'; // Fondo amarillo translúcido sin texto
+                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
                   }
 
                   return (
@@ -264,8 +318,8 @@ export default function Calendario({ usuarioId }) {
                       onClick={() => abrirModalParaCelda(d, hora, citaEncontrada)}
                     >
                       {citaEncontrada ? (
-                        <span style={estilos.textoCita}>
-                          {citaEncontrada.estado.toUpperCase().substring(0, 3)}: {citaEncontrada.tipo_sesion === 'Grupal' ? citaEncontrada.nombre_grupo : 'Ind.'}
+                        <span style={{ ...estilos.textoCita, fontSize: vistaEscala === 'trimestre' ? '0.45rem' : '0.55rem' }}>
+                          {citaEncontrada.estado.toUpperCase().substring(0, 3)}
                         </span>
                       ) : null}
                     </td>
@@ -315,7 +369,7 @@ export default function Calendario({ usuarioId }) {
                   <label style={estilos.label}>Seleccionar Empresario</label>
                   <select 
                     value={empresarioId} 
-                    onChange={(e) => setEmpresarioId(e.target.value)}
+                    onChange={(e) => seleccionarEmpresario(e.target.value)}
                     style={estilos.input}
                     required
                   >
@@ -363,7 +417,7 @@ export default function Calendario({ usuarioId }) {
               </div>
 
               <div style={estilos.grupoInput}>
-                <label style={estilos.label}>Link de Reunión (Zoom)</label>
+                <label style={estilos.label}>Link de Reunión (Zoom Recurrente)</label>
                 <input 
                   type="url" 
                   value={linkZoom} 
@@ -403,18 +457,20 @@ export default function Calendario({ usuarioId }) {
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
   titulo: { fontSize: '1.2rem', color: '#333333', marginBottom: '8px', textAlign: 'center' },
-  seccionMes: { marginBottom: '10px', textAlign: 'center' },
+  controlesSuperiores: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px' },
   inputMes: { padding: '6px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem' },
+  zoomContainer: { display: 'flex', gap: '4px' },
+  btnZoom: { padding: '6px 10px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
   tablaContainer: { overflowX: 'auto', backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
-  tabla: { width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' },
-  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px' },
-  thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', minWidth: '45px' },
-  numDia: { fontSize: '0.8rem', fontWeight: 'bold' },
-  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA' },
-  tdCelda: { padding: '4px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer', height: '32px' },
-  textoCita: { fontSize: '0.55rem', color: '#333', fontWeight: 'bold' },
+  tabla: { width: '100%', borderCollapse: 'collapse' },
+  thHora: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center', width: '40px', fontSize: '0.7rem' },
+  thDia: { padding: '6px 2px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'center' },
+  numDia: { fontSize: '0.75rem', fontWeight: 'bold' },
+  tdHora: { padding: '6px 2px', textAlign: 'center', borderBottom: '1px solid #EEE', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.7rem' },
+  tdCelda: { padding: '2px', textAlign: 'center', borderBottom: '1px solid #EEE', borderRight: '1px solid #EEE', cursor: 'pointer' },
+  textoCita: { color: '#333', fontWeight: 'bold' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },
   modalTitulo: { fontSize: '1rem', color: '#333', marginBottom: '15px', textAlign: 'center' },

@@ -128,19 +128,21 @@ export default function Calendario({ usuarioId }) {
       return false;
     }
 
-    // 2. Si no hay configuración para este día, por defecto está disponible
+    // 2. Si no hay registro para este día, por defecto está disponible
     if (!restriccionDia) return true;
 
-    // Función auxiliar para convertir "HH:MM" a minutos totales del día
-    const aMinutos = (strHora) => {
+    // Convierte "HH:MM:SS" o "HH:MM" a segundos totales respetando hasta el último segundo
+    const aSegundos = (strHora) => {
       if (!strHora) return null;
-      const partes = strHora.substring(0, 5).split(':');
-      if (partes.length < 2) return null;
-      return parseInt(partes[0], 10) * 60 + parseInt(partes[1], 10);
+      const partes = strHora.split(':');
+      const h = parseInt(partes[0] || 0, 10);
+      const m = parseInt(partes[1] || 0, 10);
+      const s = parseInt(partes[2] || 0, 10);
+      return h * 3600 + m * 60 + s;
     };
 
-    const minutosCelda = aMinutos(hora);
-    if (minutosCelda === null) return true;
+    const segundosCelda = aSegundos(hora);
+    if (segundosCelda === null) return true;
 
     const tramos = [
       { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
@@ -153,20 +155,19 @@ export default function Calendario({ usuarioId }) {
     let estaDentroDeTramoValido = false;
 
     for (let t of tramos) {
-      const minInicio = aMinutos(t.i);
-      const minFin = aMinutos(t.f);
+      const secInicio = aSegundos(t.i);
+      const secFin = aSegundos(t.f);
 
-      if (minInicio !== null && minFin !== null) {
+      if (secInicio !== null && secFin !== null) {
         tieneTramosValidos = true;
-        // Si los minutos de la celda caen dentro del rango de trabajo configurado
-        if (minutosCelda >= minInicio && minutosCelda < minFin) {
+        // Evaluación estricta a nivel de segundos
+        if (segundosCelda >= secInicio && segundosCelda < secFin) {
           estaDentroDeTramoValido = true;
           break;
         }
       }
     }
 
-    // Si hay tramos configurados, la celda solo es disponible si cayó dentro de ellos
     if (tieneTramosValidos) {
       return estaDentroDeTramoValido;
     }

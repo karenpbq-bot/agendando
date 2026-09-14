@@ -6,19 +6,17 @@ export default function Calendario({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
-  const [vistaEscala, setVistaEscala] = useState('mes'); // 'mes' o 'trimestre'
+  const [vistaEscala, setVistaEscala] = useState('mes');
   
   const [diasSemanaMes, setDiasSemanaMes] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
   const [citas, setCitas] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
   
-  // Estados del Modal
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
   const [citaExistenteId, setCitaExistenteId] = useState(null);
   
-  // Campos del Formulario de Cita
   const [tipoSession, setTipoSession] = useState('Individual');
   const [empresarioId, setEmpresarioId] = useState('');
   const [nombreGrupo, setNombreGrupo] = useState('');
@@ -30,7 +28,6 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
-  // Generador de días según la vista seleccionada (1 mes o ventana de 3 meses)
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
     let mesesAProcesar = [mesSeleccionado];
@@ -67,10 +64,10 @@ export default function Calendario({ usuarioId }) {
   }, [mesSeleccionado, vistaEscala]);
 
   useEffect(() => {
-    if (usuarioId) {
+    if (usuarioId && diasSemanaMes.length > 0) {
       cargarDatosSupabase();
     }
-  }, [usuarioId, mesSeleccionado, vistaEscala]);
+  }, [usuarioId, mesSeleccionado, vistaEscala, diasSemanaMes]);
 
   const cargarDatosSupabase = async () => {
     try {
@@ -84,7 +81,6 @@ export default function Calendario({ usuarioId }) {
         const fechaInicioRango = diasSemanaMes[0].fecha;
         const fechaFinRango = diasSemanaMes[diasSemanaMes.length - 1].fecha;
 
-        // Consultar restricciones por rango de fechas exactas (más robusto que el mes_periodo)
         const { data: dataRest } = await supabase
           .from('agd_restricciones_disponibilidad')
           .select('*')
@@ -106,16 +102,9 @@ export default function Calendario({ usuarioId }) {
   };
 
   const esDisponible = (fecha, hora) => {
-    // Buscar la restricción exacta para esta fecha
     const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
-
-    // Si no hay ninguna regla guardada para este día, por defecto está disponible
     if (!restriccionDia) return true;
-
-    // Si el día entero está marcado como bloqueado (TRUE), no está disponible
-    if (restriccionDia.bloqueado_todo_el_dia === true) {
-      return false;
-    }
+    if (restriccionDia.bloqueado_todo_el_dia === true) return false;
 
     const horaCelda = hora.trim();
     const tramos = [
@@ -134,7 +123,6 @@ export default function Calendario({ usuarioId }) {
         const inicio = t.i.substring(0, 5);
         const fin = t.f.substring(0, 5);
 
-        // Si la hora de la celda cae dentro de este tramo habilitado
         if (horaCelda >= inicio && horaCelda < fin) {
           estaEnAlgunTramoValido = true;
           break;
@@ -142,7 +130,6 @@ export default function Calendario({ usuarioId }) {
       }
     }
 
-    // Si el día tiene tramos configurados pero la hora NO cae en ninguno, se bloquea
     if (tieneTramosDefinidos && !estaEnAlgunTramoValido) {
       return false;
     }
@@ -254,30 +241,6 @@ export default function Calendario({ usuarioId }) {
 
   const horasDelDia = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
 
-  const esDisponible = (fecha, hora) => {
-    const restriccionDia = restricciones.find(r => r.fecha_especifica === fecha);
-    if (!restriccionDia) return true;
-    if (restriccionDia.bloqueado_todo_el_dia === true) return false;
-
-    const horaCelda = hora.trim();
-    const tramos = [
-      { i: restriccionDia.tramo_1_inicio, f: restriccionDia.tramo_1_fin },
-      { i: restriccionDia.tramo_2_inicio, f: restriccionDia.tramo_2_fin },
-      { i: restriccionDia.tramo_3_inicio, f: restriccionDia.tramo_3_fin },
-      { i: restriccionDia.tramo_4_inicio, f: restriccionDia.tramo_4_fin },
-    ];
-
-    for (let t of tramos) {
-      if (t.i && t.f) {
-        const inicio = t.i.substring(0, 5);
-        const fin = t.f.substring(0, 5);
-        if (horaCelda >= inicio && horaCelda < fin) return false;
-      }
-    }
-    return true;
-  };
-
-  // Dinámica de escala para compactar o expandir según el botón de Zoom
   const estilosEscala = {
     fontSize: vistaEscala === 'trimestre' ? '0.45rem' : '0.7rem',
     minWidth: vistaEscala === 'trimestre' ? '22px' : '45px',
@@ -288,7 +251,6 @@ export default function Calendario({ usuarioId }) {
     <div style={estilos.contenedor}>
       <h2 style={estilos.titulo}>Calendario de Sesiones</h2>
       
-      {/* Controles superiores: Selector de Mes y Botones de Zoom / Escala */}
       <div style={estilos.controlesSuperiores}>
         <div style={estilos.grupoMes}>
           <label style={estilos.labelControl}>Mes Base:</label>
@@ -346,17 +308,15 @@ export default function Calendario({ usuarioId }) {
                   const disponible = esDisponible(d.fecha, hora);
                   const citaEncontrada = citas.find(c => c.fecha_cita === d.fecha && hora >= c.hora_inicio && hora < c.hora_fin);
 
-                 let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
+                  let estiloCelda = { ...estilos.tdCelda, height: estilosEscala.height };
                   
                   if (citaEncontrada) {
                     if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
                     else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
                     else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
                   } else if (disponible) {
-                    // Espacio HABILITADO / Libre (Amarillo translúcido)
                     estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
                   } else {
-                    // Espacio RESTRINGIDO / Bloqueado (Gris claro inactivo)
                     estiloCelda.backgroundColor = '#EAEAEA';
                     estiloCelda.cursor = 'not-allowed';
                   }
@@ -381,14 +341,12 @@ export default function Calendario({ usuarioId }) {
         </table>
       </div>
 
-      {/* MODAL */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
             <h3 style={estilos.modalTitulo}>Gestionar Cita: {diaSeleccionado?.nombreDia} {diaSeleccionado?.fecha}</h3>
             
             <form onSubmit={guardarCita} style={estilos.formularioModal}>
-              
               <div style={estilos.grupoInput}>
                 <label style={estilos.label}>Estado de la Sesión</label>
                 <select 
@@ -494,12 +452,10 @@ export default function Calendario({ usuarioId }) {
                 <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrar}>Cancelar</button>
                 <button type="submit" style={estilos.botonGuardar}>Guardar y Enviar WhatsApp</button>
               </div>
-
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }

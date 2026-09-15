@@ -20,8 +20,11 @@ export default function Calendario({ usuarioId }) {
     buffer: 15
   });
 
-  // Eje lateral izquierdo: Las 24 horas en punto exactas (00:00 a 23:00)
+  // Eje lateral izquierdo: Las 24 horas exactas en punto
   const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+
+  // 12 divisiones de 5 minutos por cada hora (0, 5, 10, 15, ..., 55)
+  const subBloquesCincoMin = Array.from({ length: 12 }, (_, i) => i * 5);
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);
@@ -38,7 +41,6 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
-  // Generador de días según la vista seleccionada (1 mes o trimestre)
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
     let mesesAProcesar = [mesSeleccionado];
@@ -133,7 +135,8 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  const esDisponible = (fecha, minInicioHora, minFinHora) => {
+  // Validación de disponibilidad por segmento de 5 minutos
+  const esDisponibleCincoMin = (fecha, minInicioSeg, minFinSeg) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
       const partes = strHora.split(':');
@@ -143,8 +146,7 @@ export default function Calendario({ usuarioId }) {
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
 
-    // Validación flexible: Si la hora se cruza con la jornada configurada (ej. 08:30)
-    if (minFinHora <= minJornadaIni || minInicioHora >= minJornadaFin) {
+    if (minFinSeg <= minJornadaIni || minInicioSeg >= minJornadaFin) {
       return false; 
     }
 
@@ -171,7 +173,7 @@ export default function Calendario({ usuarioId }) {
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
-        if (minInicioHora < minFinTramo && minFinHora > minInicioTramo) {
+        if (minInicioSeg < minFinTramo && minFinSeg > minInicioTramo) {
           return false; 
         }
       }
@@ -180,7 +182,7 @@ export default function Calendario({ usuarioId }) {
     return true;
   };
 
-  const abrirModalParaFranja = (dia, horaStr, citaEncontrada = null) => {
+  const abrirModalParaMinuto = (dia, horaStr, citaEncontrada = null) => {
     setDiaSeleccionado(dia);
     
     if (citaEncontrada) {
@@ -194,11 +196,9 @@ export default function Calendario({ usuarioId }) {
       setEstadoCita(citaEncontrada.estado || 'confirmado');
     } else {
       setCitaExistenteId(null);
-      // Si hacen clic en una hora (ej. 08:00), autocompletamos con la hora real de inicio de jornada si aplica, o la hora seleccionada
-      const horaEfectiva = horaStr === '08:00' && jornadaChair.inicio === '08:30' ? '08:30' : horaStr;
-      setHoraInicio(horaEfectiva);
+      setHoraInicio(horaStr);
       
-      const [h, m] = horaEfectiva.split(':').map(Number);
+      const [h, m] = horaStr.split(':').map(Number);
       const totalMinFin = h * 60 + m + Number(jornadaChair.duracionSesion);
       const hFinCalc = Math.floor(totalMinFin / 60);
       const mFinCalc = totalMinFin % 60;
@@ -347,49 +347,60 @@ export default function Calendario({ usuarioId }) {
 
         <div style={estilos.gridBodyScroll}>
           {horasDelDia.map((horaBase, indexH) => {
-            const minInicioHora = indexH * 60;
-            const minFinHora = minInicioHora + 60;
-            const horaStr = `${String(indexH).padStart(2, '0')}:00`;
+            const minBase = indexH * 60;
 
             return (
               <div key={horaBase} style={{ ...estilos.gridRow, gridTemplateColumns: `70px repeat(${diasSemanaMes.length}, ${estilosEscala.minWidth})` }}>
                 <div style={estilos.colHoraFija}>{horaBase}</div>
 
                 {diasSemanaMes.map(d => {
-                  const disponible = esDisponible(d.fecha, minInicioHora, minFinHora);
-                  const citaEncontrada = citas.find(c => {
-                    if (c.fecha_cita !== d.fecha) return false;
-                    const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
-                    const minIniC = hIniC * 60 + (mIniC || 0);
-                    const [hFinC, mFinC] = c.hora_fin.split(':').map(Number);
-                    const minFinC = hFinC * 60 + (mFinC || 0);
-                    return minInicioHora < minFinC && minFinHora > minIniC;
-                  });
-
-                  let estiloCelda = { ...estilos.celdaDia };
-                  if (citaEncontrada) {
-                    if (citaEncontrada.estado === 'reservado') estiloCelda.backgroundColor = '#FFE0B2';
-                    else if (citaEncontrada.estado === 'confirmado') estiloCelda.backgroundColor = '#D1F0EE';
-                    else if (citaEncontrada.estado === 'cancelado') estiloCelda.backgroundColor = '#FFCDD2';
-                  } else if (disponible) {
-                    estiloCelda.backgroundColor = 'rgba(255, 235, 59, 0.3)';
-                    estiloCelda.cursor = 'pointer';
-                  } else {
-                    estiloCelda.backgroundColor = '#EAEAEA';
-                    estiloCelda.cursor = 'not-allowed';
-                  }
-
                   return (
-                    <div 
-                      key={d.fecha} 
-                      style={estiloCelda}
-                      onClick={() => abrirModalParaFranja(d, horaStr, citaEncontrada)}
-                    >
-                      {citaEncontrada ? (
-                        <span style={estilos.textoCita}>
-                          {citaEncontrada.estado.toUpperCase().substring(0, 3)}
-                        </span>
-                      ) : null}
+                    <div key={d.fecha} style={estilos.celdaContenedorPlana}>
+                      {subBloquesCincoMin.map(mOffset => {
+                        const minInicioSeg = minBase + mOffset;
+                        const minFinSeg = minInicioSeg + 5;
+                        const hStr = String(indexH).padStart(2, '0');
+                        const mStr = String(mOffset).padStart(2, '0');
+                        const horaMinutoStr = `${hStr}:${mStr}`;
+
+                        const disponible = esDisponibleCincoMin(d.fecha, minInicioSeg, minFinSeg);
+                        const citaEncontrada = citas.find(c => {
+                          if (c.fecha_cita !== d.fecha) return false;
+                          const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
+                          const minIniC = hIniC * 60 + (mIniC || 0);
+                          const [hFinC, mFinC] = c.hora_fin.split(':').map(Number);
+                          const minFinC = hFinC * 60 + (mFinC || 0);
+                          return minInicioSeg < minFinC && minFinSeg > minIniC;
+                        });
+
+                        let estiloSubSegmento = { ...estilos.subSegmentoPlano };
+                        if (citaEncontrada) {
+                          if (citaEncontrada.estado === 'reservado') estiloSubSegmento.backgroundColor = '#FFE0B2';
+                          else if (citaEncontrada.estado === 'confirmado') estiloSubSegmento.backgroundColor = '#D1F0EE';
+                          else if (citaEncontrada.estado === 'cancelado') estiloSubSegmento.backgroundColor = '#FFCDD2';
+                        } else if (disponible) {
+                          estiloSubSegmento.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                          estiloSubSegmento.cursor = 'pointer';
+                        } else {
+                          estiloSubSegmento.backgroundColor = '#EAEAEA';
+                          estiloSubSegmento.cursor = 'not-allowed';
+                        }
+
+                        return (
+                          <div 
+                            key={mOffset}
+                            style={estiloSubSegmento}
+                            onClick={() => abrirModalParaMinuto(d, horaMinutoStr, citaEncontrada)}
+                            title={horaMinutoStr}
+                          >
+                            {citaEncontrada && mOffset === 0 ? (
+                              <span style={estilos.textoCita}>
+                                {citaEncontrada.estado.toUpperCase().substring(0, 3)}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -538,9 +549,13 @@ const estilos = {
   
   gridBodyScroll: { maxHeight: '550px', overflowY: 'auto', overflowX: 'auto' },
   gridRow: { display: 'grid', borderBottom: '1px solid #EEE' },
-  colHoraFija: { padding: '10px 4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 2, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  celdaDia: { height: '45px', borderRight: '1px solid #EEE', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' },
-  textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.55rem' },
+  colHoraFija: { padding: '6px 4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 2, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  
+  // Celda plana que contiene los 12 sub-bloques de 5 minutos apilados verticalmente de forma compacta
+  celdaContenedorPlana: { height: '48px', borderRight: '1px solid #EEE', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
+  subSegmentoPlano: { flex: 1, width: '100%', boxSizing: 'border-box', borderBottom: '0.5px solid rgba(0,0,0,0.03)' },
+
+  textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.45rem', paddingLeft: '1px', position: 'absolute' },
 
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },

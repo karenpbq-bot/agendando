@@ -4,12 +4,16 @@ import { supabase } from '../supabaseClient';
 export default function GestionGrupos({ usuarioId }) {
   const [grupos, setGrupos] = useState([]);
   const [nombreGrupo, setNombreGrupo] = useState('');
-  const [etiquetaInvitados, setEtiquetaInvitados] = useState(''); // Ej. Empresario, León, Tigre, Familia
+  const [etiquetaInvitados, setEtiquetaInvitados] = useState(''); 
   const [grupoSeleccionado, setGrupoSeleccionado] = useState(null);
   const [miembrosGrupo, setMiembrosGrupo] = useState([]);
   
+  // Estados para el buscador de usuarios existentes en el modal
+  const [busquedaUsuario, setBusquedaUsuario] = useState('');
+  const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
+
   // Control de Cupos y Saldo
-  const [limiteTotalPlan] = useState(50); // Límite asignado por ti (Administradora)
+  const [limiteTotalPlan] = useState(50);
   const [totalInvitadosActuales, setTotalInvitadosActuales] = useState(0);
 
   const [mensaje, setMensaje] = useState('');
@@ -21,7 +25,7 @@ export default function GestionGrupos({ usuarioId }) {
     }
   }, [usuarioId]);
 
-  // Generador de código aleatorio exacto de 7 caracteres (letras y números)
+  // Generador de código aleatorio exacto de 7 caracteres
   const generarCodigoInvitacion = () => {
     const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let codigo = '';
@@ -33,7 +37,6 @@ export default function GestionGrupos({ usuarioId }) {
 
   const cargarDatosChair = async () => {
     try {
-      // 1. Cargar grupos del Chair
       const { data: gruposData, error: gruposError } = await supabase
         .from('agd_grupos')
         .select('*')
@@ -44,7 +47,6 @@ export default function GestionGrupos({ usuarioId }) {
       if (gruposData) {
         setGrupos(gruposData);
 
-        // 2. Contar cuántos miembros invitados totales tiene este Chair en todos sus grupos
         const idsGrupos = gruposData.map(g => g.id);
         if (idsGrupos.length > 0) {
           const { count, error: countError } = await supabase
@@ -69,7 +71,6 @@ export default function GestionGrupos({ usuarioId }) {
     setCargando(true);
 
     try {
-      // Validación opcional de saldo antes de crear un grupo si aplica
       if (totalInvitadosActuales >= limiteTotalPlan) {
         setMensaje('Has alcanzado el límite máximo de invitados permitidos en tu cuenta.');
         setCargando(false);
@@ -82,7 +83,7 @@ export default function GestionGrupos({ usuarioId }) {
         {
           chair_id: usuarioId,
           nombre_grupo: nombreGrupo,
-          codigo_cliente: 'TAM01', // Asignado de forma interna y segura
+          codigo_cliente: 'TAM01',
           codigo_invitacion: codigoUnico,
           etiqueta_invitados: etiquetaInvitados.trim() || null,
           activo: true
@@ -104,10 +105,12 @@ export default function GestionGrupos({ usuarioId }) {
 
   const verMiembros = async (grupo) => {
     setGrupoSeleccionado(grupo);
+    setBusquedaUsuario('');
+    setResultadosBusqueda([]);
     try {
       const { data, error } = await supabase
         .from('agd_grupo_miembros')
-        .select('*, usuarios(nombre_completo, email, telefono, rol)')
+        .select('*, usuarios(id, nombre_completo, email, telefono, rol)')
         .eq('grupo_id', grupo.id);
 
       if (error) throw error;
@@ -117,11 +120,75 @@ export default function GestionGrupos({ usuarioId }) {
     }
   };
 
-  const compartirWhatsApp = (grupo) => {
+  // Buscador de usuarios existentes en la plataforma por palabra clave
+  const buscarUsuariosPlataforma = async (termino) => {
+    setBusquedaUsuario(termino);
+    if (!termino || termino.trim().length < 2) {
+      setResultadosBusqueda([]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('id, nombre_completo, email, telefono, rol')
+        .or(`nombre_completo.ilike.%${termino}%,email.ilike.%${termino}%,dni.ilike.%${termino}%`)
+        .limit(5);
+
+      if (!error && data) {
+        // Filtramos para no mostrar en la búsqueda a usuarios que ya están en este grupo
+        const idsMiembrosActuales = miembrosGrupo.map(m => m.usuario_id);
+        const filtrados = data.filter(u => !idsMiembrosActuales.includes(u.id));
+        setResultadosBusqueda(filtrados);
+      }
+    } catch (err) {
+      console.error('Error buscando usuarios:', err);
+    }
+  };
+
+  // Agregar un usuario existente al grupo actual
+  const agregarMiembroAlGrupo = async (usuario) => {
+    if (!grupoSeleccionado) return;
+
+    try {
+      const rolEnGrupo = usuario.rol === 'Chair' ? 'Chair' : 'Invitado';
+
+      const { error } = await supabase
+        .from('agd_grupo_miembros')
+        .insert([
+          {
+            grupo_id: grupoSeleccionado.id,
+            usuario_id: usuario.id,
+            rol_en_grupo: rolEnGrupo,
+            alias_invitado: grupoSeleccionado.etiqueta_invitados || null,
+            codigo_usado: grupoSeleccionado.codigo_invitacion
+          }
+        ]);
+
+      if (error) throw error;
+
+      // Actualizar vista local
+      verMiembros(grupoSeleccionado);
+      cargarDatosChair();
+      setBusquedaUsuario('');
+      setResultadosBusqueda([]);
+      setMensaje(`¡${usuario.nombre_completo} agregado al grupo con éxito!`);
+    } catch (err) {
+      setMensaje('Error al agregar miembro: ' + err.message);
+    }
+  };
+
+  const compartirWhatsApp = (grupo, telefonoDestino = '', nombreDestino = '') => {
+    const saludo = nombreDestino ? `¡Hola ${nombreDestino}!` : '¡Hola!';
     const texto = encodeURIComponent(
-      `¡Hola! Te invito a unirte a mi grupo "${grupo.nombre_grupo}" en Agendando. Ingresa a la plataforma y regístrate utilizando este código de invitación: ${grupo.codigo_invitacion}`
+      `${saludo} Te invito a unirte a mi grupo "${grupo.nombre_grupo}" en Agendando. Ingresa a la plataforma y regístrate utilizando este código de invitación: ${grupo.codigo_invitacion}`
     );
-    window.open(`https://wa.me/?text=${texto}`, '_blank');
+    
+    if (telefonoDestino) {
+      window.open(`https://wa.me/${telefonoDestino.replace(/\+/g, '')}?text=${texto}`, '_blank');
+    } else {
+      window.open(`https://wa.me/?text=${texto}`, '_blank');
+    }
   };
 
   const saldoDisponibles = limiteTotalPlan - totalInvitadosActuales;
@@ -207,7 +274,7 @@ export default function GestionGrupos({ usuarioId }) {
         </div>
       </div>
 
-      {/* Modal de Miembros del Grupo Seleccionado */}
+      {/* Modal de Miembros del Grupo Seleccionado y Buscador */}
       {grupoSeleccionado && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -217,27 +284,72 @@ export default function GestionGrupos({ usuarioId }) {
             </div>
             <p style={estilos.infoCodigoModal}>Código de invitación del grupo: <b>{grupoSeleccionado.codigo_invitacion}</b></p>
             
+            {/* Buscador de miembros existentes en la plataforma */}
+            <div style={estilos.seccionBuscador}>
+              <label style={estilos.label}>Buscar y Agregar Miembros Existentes (Anfitriones / Invitados):</label>
+              <input 
+                type="text" 
+                value={busquedaUsuario}
+                onChange={(e) => buscarUsuariosPlataforma(e.target.value)}
+                placeholder="Escribe nombre, correo o DNI..."
+                style={estilos.input}
+              />
+              {resultadosBusqueda.length > 0 && (
+                <div style={estilos.resultadosDropdown}>
+                  {resultadosBusqueda.map(user => (
+                    <div key={user.id} style={estilos.itemResultadoBusqueda}>
+                      <div>
+                        <p style={{margin: 0, fontWeight: 'bold'}}>{user.nombre_completo}</p>
+                        <p style={{margin: 0, fontSize: '0.65rem', color: '#666'}}>{user.email} | {user.rol}</p>
+                      </div>
+                      <button 
+                        onClick={() => agregarMiembroAlGrupo(user)} 
+                        style={estilos.botonAgregarMiembro}
+                      >
+                        + Agregar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div style={estilos.tablaMiembrosContainer}>
               {miembrosGrupo.length === 0 ? (
-                <p style={estilos.textoVacio}>Aún no hay invitados ni miembros registrados con este código.</p>
+                <p style={estilos.textoVacio}>Aún no hay miembros registrados en este grupo.</p>
               ) : (
                 <table style={estilos.tablaMiembros}>
                   <thead>
                     <tr>
                       <th style={estilos.thMiembro}>Nombre</th>
-                      <th style={estilos.thMiembro}>Email</th>
+                      <th style={estilos.thMiembro}>Email / Teléfono</th>
                       <th style={estilos.thMiembro}>Rol</th>
+                      <th style={estilos.thMiembro}>Acción WA</th>
                     </tr>
                   </thead>
                   <tbody>
                     {miembrosGrupo.map(m => (
                       <tr key={m.id}>
                         <td style={estilos.tdMiembro}>{m.usuarios?.nombre_completo || 'N/D'}</td>
-                        <td style={estilos.tdMiembro}>{m.usuarios?.email || 'N/D'}</td>
+                        <td style={estilos.tdMiembro}>
+                          {m.usuarios?.email || 'N/D'}<br/>
+                          <span style={{fontSize: '0.65rem', color: '#666'}}>{m.usuarios?.telefono}</span>
+                        </td>
                         <td style={estilos.tdMiembro}>
                           <span style={{...estilos.badgeRol, backgroundColor: m.rol_en_grupo === 'Chair' ? '#00796B' : '#B8860B'}}>
                             {m.rol_en_grupo}
                           </span>
+                        </td>
+                        <td style={estilos.tdMiembro}>
+                          {m.usuarios?.telefono && (
+                            <button 
+                              onClick={() => compartirWhatsApp(grupoSeleccionado, m.usuarios.telefono, m.usuarios.nombre_completo)} 
+                              style={estilos.botonWsTabla}
+                              title="Enviar invitación por WhatsApp"
+                            >
+                              💬 WA
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -278,14 +390,19 @@ const estilos = {
   botonSecundario: { padding: '5px 8px', borderRadius: '4px', border: '1px solid #00A89F', background: '#FFF', color: '#00A89F', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
   botonWs: { padding: '5px 8px', borderRadius: '4px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
-  modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '550px', boxSizing: 'border-box' },
+  modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '600px', boxSizing: 'border-box' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' },
   modalTitulo: { fontSize: '1rem', color: '#333', margin: 0 },
   btnCerrarModal: { background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer', color: '#666' },
-  infoCodigoModal: { fontSize: '0.8rem', color: '#555', marginBottom: '12px' },
-  tablaMiembrosContainer: { maxHeight: '300px', overflowY: 'auto' },
-  tablaMiembros: { width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' },
-  thMiembro: { padding: '8px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'left' },
-  tdMiembro: { padding: '8px', borderBottom: '1px solid #EEE' },
-  badgeRol: { padding: '3px 8px', borderRadius: '10px', color: '#FFF', fontSize: '0.7rem', fontWeight: 'bold' }
+  infoCodigoModal: { fontSize: '0.8rem', color: '#555', marginBottom: '10px' },
+  seccionBuscador: { marginBottom: '12px', position: 'relative', textAlign: 'left', backgroundColor: '#F8F9FA', padding: '10px', borderRadius: '6px', border: '1px solid #EAEAEA' },
+  resultadosDropdown: { position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#FFF', border: '1px solid #CCC', borderRadius: '6px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)', zIndex: 10, maxHeight: '150px', overflowY: 'auto' },
+  itemResultadoBusqueda: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid #EEE' },
+  botonAgregarMiembro: { backgroundColor: '#00A89F', color: '#FFF', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
+  tablaMiembrosContainer: { maxHeight: '250px', overflowY: 'auto' },
+  tablaMiembros: { width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' },
+  thMiembro: { padding: '6px', backgroundColor: '#00A89F', color: '#FFF', textAlign: 'left' },
+  tdMiembro: { padding: '6px', borderBottom: '1px solid #EEE', verticalAlign: 'middle' },
+  badgeRol: { padding: '3px 8px', borderRadius: '10px', color: '#FFF', fontSize: '0.65rem', fontWeight: 'bold' },
+  botonWsTabla: { backgroundColor: '#25D366', color: '#FFF', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }
 };

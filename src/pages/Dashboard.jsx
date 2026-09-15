@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Disponibilidad from '../components/Disponibilidad';
 import Calendario from '../components/Calendario'; // Importamos el módulo del Bloque 2
+import GestionGrupos from '../components/GestionGrupos';
 
 // Subcomponente modular: Bloque tipo acordeón (Desplegable)
 const BloqueDesplegable = ({ titulo, isOpen, onClick, children }) => {
@@ -92,9 +93,7 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
               isOpen={bloqueAbierto === 3} 
               onClick={() => alternarBloque(3)}
             >
-              <div style={estilos.placeholderMascara}>
-                <p>Módulo <b>Grupos.jsx</b> se insertará aquí.</p>
-              </div>
+              <GestionGrupos usuarioId={usuarioData?.id} />
             </BloqueDesplegable>
           )}
 

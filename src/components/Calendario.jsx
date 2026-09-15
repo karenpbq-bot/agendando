@@ -6,7 +6,7 @@ export default function Calendario({ usuarioId }) {
   const mesActualStr = `${fechaActual.getFullYear()}-${String(fechaActual.getMonth() + 1).padStart(2, '0')}`;
   
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActualStr);
-  const [vistaEscala, setVistaEscala] = useState('mes');
+  const [vistaEscala, setVistaEscala] = useState('mes'); // 'mes', 'semana', 'trimestre'
   
   const [diasSemanaMes, setDiasSemanaMes] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
@@ -20,10 +20,7 @@ export default function Calendario({ usuarioId }) {
     buffer: 15
   });
 
-  // Eje lateral izquierdo: Las 24 horas exactas en punto
   const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
-
-  // 12 divisiones de 5 minutos por cada hora (0, 5, 10, 15, ..., 55)
   const subBloquesCincoMin = Array.from({ length: 12 }, (_, i) => i * 5);
 
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -41,37 +38,64 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
+  // Generador de días según la vista seleccionada (mes, semana o trimestre)
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
-    let mesesAProcesar = [mesSeleccionado];
-
-    if (vistaEscala === 'trimestre') {
-      const fechaAnterior = new Date(anio, mes - 2, 1);
-      const fechaProxima = new Date(anio, mes, 1);
-      
-      const mesAntStr = `${fechaAnterior.getFullYear()}-${String(fechaAnterior.getMonth() + 1).padStart(2, '0')}`;
-      const mesProxStr = `${fechaProxima.getFullYear()}-${String(fechaProxima.getMonth() + 1).padStart(2, '0')}`;
-      
-      mesesAProcesar = [mesAntStr, mesSeleccionado, mesProxStr];
-    }
-
     let listaDiasTotal = [];
-    mesesAProcesar.forEach(mStr => {
-      const [y, m] = mStr.split('-').map(Number);
-      const ultimoDia = new Date(y, m, 0).getDate();
-      for (let d = 1; d <= ultimoDia; d++) {
-        const fechaObj = new Date(y, m - 1, d);
-        const fechaFormateada = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const nombreDia = fechaObj.toLocaleDateString('es-ES', { weekday: 'long' });
+
+    if (vistaEscala === 'semana') {
+      // Vista Semanal: Tomamos 7 días a partir del primer día del mes seleccionado (o la semana actual)
+      const primerDiaMes = new Date(anio, mes - 1, 1);
+      // Ajustamos al lunes de esa semana o tomamos 7 días corridos
+      let diaInicioSemana = new Date(primerDiaMes);
+      
+      for (let i = 0; i < 7; i++) {
+        const dObj = new Date(diaInicioSemana);
+        dObj.setDate(diaInicioSemana.getDate() + i);
         
+        const y = dObj.getFullYear();
+        const m = dObj.getMonth() + 1;
+        const d = dObj.getDate();
+        const fechaFormateada = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const nombreDia = dObj.toLocaleDateString('es-ES', { weekday: 'long' });
+
         listaDiasTotal.push({
           fecha: fechaFormateada,
-          mesPeriodo: mStr,
+          mesPeriodo: `${y}-${String(m).padStart(2, '0')}`,
           diaNumero: String(d).padStart(2, '0'),
           nombreDia: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)
         });
       }
-    });
+    } else {
+      let mesesAProcesar = [mesSeleccionado];
+
+      if (vistaEscala === 'trimestre') {
+        const fechaAnterior = new Date(anio, mes - 2, 1);
+        const fechaProxima = new Date(anio, mes, 1);
+        
+        const mesAntStr = `${fechaAnterior.getFullYear()}-${String(fechaAnterior.getMonth() + 1).padStart(2, '0')}`;
+        const mesProxStr = `${fechaProxima.getFullYear()}-${String(fechaProxima.getMonth() + 1).padStart(2, '0')}`;
+        
+        mesesAProcesar = [mesAntStr, mesSeleccionado, mesProxStr];
+      }
+
+      mesesAProcesar.forEach(mStr => {
+        const [y, m] = mStr.split('-').map(Number);
+        const ultimoDia = new Date(y, m, 0).getDate();
+        for (let d = 1; d <= ultimoDia; d++) {
+          const fechaObj = new Date(y, m - 1, d);
+          const fechaFormateada = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const nombreDia = fechaObj.toLocaleDateString('es-ES', { weekday: 'long' });
+          
+          listaDiasTotal.push({
+            fecha: fechaFormateada,
+            mesPeriodo: mStr,
+            diaNumero: String(d).padStart(2, '0'),
+            nombreDia: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1)
+          });
+        }
+      });
+    }
 
     setDiasSemanaMes(listaDiasTotal);
   }, [mesSeleccionado, vistaEscala]);
@@ -135,7 +159,6 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // Validación de disponibilidad por segmento de 5 minutos
   const esDisponibleCincoMin = (fecha, minInicioSeg, minFinSeg) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
@@ -291,12 +314,12 @@ export default function Calendario({ usuarioId }) {
 
   const estilosEscala = {
     fontSize: vistaEscala === 'trimestre' ? '0.4rem' : '0.65rem',
-    minWidth: vistaEscala === 'trimestre' ? '22px' : '65px',
+    minWidth: vistaEscala === 'semana' ? '120px' : (vistaEscala === 'trimestre' ? '22px' : '65px'),
   };
 
   return (
     <div style={estilos.contenedor}>
-      <h2 style={estilos.titulo}>Calendario de Sesiones</h2>
+      {/* Se eliminó el título repetido "Calendario de Sesiones" para ganar espacio vertical */}
       
       <div style={estilos.controlesSuperiores}>
         <div style={estilos.grupoMes}>
@@ -309,6 +332,13 @@ export default function Calendario({ usuarioId }) {
           />
         </div>
         <div style={estilos.zoomContainer}>
+          <button 
+            type="button" 
+            onClick={() => setVistaEscala('semana')}
+            style={{ ...estilos.btnZoom, backgroundColor: vistaEscala === 'semana' ? '#00A89F' : '#E0E0E0', color: vistaEscala === 'semana' ? '#FFF' : '#333' }}
+          >
+            Semana
+          </button>
           <button 
             type="button" 
             onClick={() => setVistaEscala('mes')}
@@ -531,29 +561,27 @@ export default function Calendario({ usuarioId }) {
 
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
-  titulo: { fontSize: '1.2rem', color: '#333333', marginBottom: '8px', textAlign: 'center' },
-  controlesSuperiores: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px', flexWrap: 'wrap', backgroundColor: '#FFF', padding: '8px', borderRadius: '8px', border: '1px solid #EAEAEA' },
+  controlesSuperiores: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', flexWrap: 'wrap', backgroundColor: '#FFF', padding: '6px 8px', borderRadius: '8px', border: '1px solid #EAEAEA' },
   grupoMes: { display: 'flex', alignItems: 'center', gap: '6px' },
   labelControl: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
-  inputMes: { padding: '6px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem' },
+  inputMes: { padding: '5px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem' },
   zoomContainer: { display: 'flex', gap: '4px' },
-  btnZoom: { padding: '6px 10px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  btnZoom: { padding: '5px 8px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
-  leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
+  leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' },
   
   gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #EAEAEA' },
   gridHeaderRow: { display: 'grid', backgroundColor: '#00A89F', color: '#FFF', position: 'sticky', top: 0, zIndex: 3 },
-  headerEsquina: { padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 4, borderRight: '1px solid rgba(255,255,255,0.2)' },
-  headerDia: { padding: '8px 4px', textAlign: 'center', fontSize: '0.7rem' },
+  headerEsquina: { padding: '6px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 4, borderRight: '1px solid rgba(255,255,255,0.2)' },
+  headerDia: { padding: '6px 4px', textAlign: 'center', fontSize: '0.7rem' },
   numDia: { fontWeight: 'bold' },
   
-  gridBodyScroll: { maxHeight: '550px', overflowY: 'auto', overflowX: 'auto' },
+  gridBodyScroll: { maxHeight: '620px', overflowY: 'auto', overflowX: 'auto' }, // Mayor altura para mostrar más horas en pantalla
   gridRow: { display: 'grid', borderBottom: '1px solid #EEE' },
-  colHoraFija: { padding: '6px 4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 2, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  colHoraFija: { padding: '4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 2, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   
-  // Celda plana que contiene los 12 sub-bloques de 5 minutos apilados verticalmente de forma compacta
   celdaContenedorPlana: { height: '48px', borderRight: '1px solid #EEE', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
-  subSegmentoPlano: { flex: 1, width: '100%', boxSizing: 'border-box', borderBottom: '0.5px solid rgba(0,0,0,0.03)' },
+  subSegmentoPlano: { flex: 1, width: '100%', boxSizing: 'border-box', borderBottom: '0.5px solid rgba(0,0,0,0.02)' },
 
   textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.45rem', paddingLeft: '1px', position: 'absolute' },
 

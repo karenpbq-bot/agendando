@@ -119,7 +119,7 @@ export default function GestionGrupos({ usuarioId }) {
 
   const compartirWhatsApp = (grupo) => {
     const texto = encodeURIComponent(
-      `¡Hola! Te invito a unirte a mi grupo "${grupo.nombre_grupo}". Ingresa a la plataforma y utiliza tu código de invitación obligatorio: *${grupo.codigo_invitacion}*`
+      `¡Hola! Te invito a unirte a mi grupo "${grupo.nombre_grupo}" en Agendando. Ingresa a la plataforma y regístrate utilizando este código de invitación: ${grupo.codigo_invitacion}`
     );
     window.open(`https://wa.me/?text=${texto}`, '_blank');
   };

@@ -3,6 +3,7 @@ import Disponibilidad from '../components/Disponibilidad';
 import Calendario from '../components/Calendario';
 import GestionGrupos from '../components/GestionGrupos';
 import Reprogramaciones from '../components/Reprogramaciones'; // <-- 1. Importación añadida
+import InformacionCuenta from '../components/InformacionCuenta';
 
 // Subcomponente modular: Bloque tipo acordeón (Desplegable)
 const BloqueDesplegable = ({ titulo, isOpen, onClick, children }) => {
@@ -108,6 +109,15 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
               <Reprogramaciones usuarioId={usuarioData?.id} />
             </BloqueDesplegable>
           )}
+
+          {/* Bloque 6: Información de la Cuenta (Visible para todos) */}
+          <BloqueDesplegable 
+            titulo="Información de la Cuenta" 
+            isOpen={bloqueAbierto === 6} 
+            onClick={() => alternarBloque(6)}
+          >
+            <InformacionCuenta usuarioId={usuarioData?.id} />
+          </BloqueDesplegable>
 
           {/* Bloque 4: Administración y Suscripciones */}
           {esAdmin && (

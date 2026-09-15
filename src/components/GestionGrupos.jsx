@@ -5,15 +5,19 @@ export default function GestionGrupos({ usuarioId }) {
   const [grupos, setGrupos] = useState([]);
   const [nombreGrupo, setNombreGrupo] = useState('');
   const [etiquetaInvitados, setEtiquetaInvitados] = useState(''); // Ej. Empresario, León, Tigre, Familia
-  const [limiteInvitados, setLimiteInvitados] = useState(50); // Por defecto 50 invitados
   const [grupoSeleccionado, setGrupoSeleccionado] = useState(null);
   const [miembrosGrupo, setMiembrosGrupo] = useState([]);
+  
+  // Control de Cupos y Saldo
+  const [limiteTotalPlan] = useState(50); // Límite asignado por ti (Administradora)
+  const [totalInvitadosActuales, setTotalInvitadosActuales] = useState(0);
+
   const [mensaje, setMensaje] = useState('');
   const [cargando, setCargando] = useState(false);
 
   useEffect(() => {
     if (usuarioId) {
-      cargarGruposChair();
+      cargarDatosChair();
     }
   }, [usuarioId]);
 
@@ -27,18 +31,35 @@ export default function GestionGrupos({ usuarioId }) {
     return codigo;
   };
 
-  const cargarGruposChair = async () => {
+  const cargarDatosChair = async () => {
     try {
-      const { data, error } = await supabase
+      // 1. Cargar grupos del Chair
+      const { data: gruposData, error: gruposError } = await supabase
         .from('agd_grupos')
         .select('*')
         .eq('chair_id', usuarioId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      if (data) setGrupos(data);
+      if (gruposError) throw gruposError;
+      if (gruposData) {
+        setGrupos(gruposData);
+
+        // 2. Contar cuántos miembros invitados totales tiene este Chair en todos sus grupos
+        const idsGrupos = gruposData.map(g => g.id);
+        if (idsGrupos.length > 0) {
+          const { count, error: countError } = await supabase
+            .from('agd_grupo_miembros')
+            .select('*', { count: 'exact', head: true })
+            .in('grupo_id', idsGrupos)
+            .eq('rol_en_grupo', 'Invitado');
+
+          if (!countError) {
+            setTotalInvitadosActuales(count || 0);
+          }
+        }
+      }
     } catch (err) {
-      console.error('Error cargando grupos:', err);
+      console.error('Error cargando datos del Chair:', err);
     }
   };
 
@@ -48,6 +69,13 @@ export default function GestionGrupos({ usuarioId }) {
     setCargando(true);
 
     try {
+      // Validación opcional de saldo antes de crear un grupo si aplica
+      if (totalInvitadosActuales >= limiteTotalPlan) {
+        setMensaje('Has alcanzado el límite máximo de invitados permitidos en tu cuenta.');
+        setCargando(false);
+        return;
+      }
+
       const codigoUnico = generarCodigoInvitacion();
 
       const { error } = await supabase.from('agd_grupos').insert([
@@ -56,8 +84,7 @@ export default function GestionGrupos({ usuarioId }) {
           nombre_grupo: nombreGrupo,
           codigo_cliente: 'TAM01', // Asignado de forma interna y segura
           codigo_invitacion: codigoUnico,
-          limite_invitados: parseInt(limiteInvitados, 10) || 50,
-          etiqueta_invitados: etiquetaInvitados.trim() || null, // Opcional: Empresario, León, Tigre, etc.
+          etiqueta_invitados: etiquetaInvitados.trim() || null,
           activo: true
         }
       ]);
@@ -67,8 +94,7 @@ export default function GestionGrupos({ usuarioId }) {
       setMensaje(`¡Grupo creado con éxito! Código: ${codigoUnico}`);
       setNombreGrupo('');
       setEtiquetaInvitados('');
-      setLimiteInvitados(50);
-      cargarGruposChair();
+      cargarDatosChair();
     } catch (err) {
       setMensaje('Error al crear el grupo: ' + err.message);
     } finally {
@@ -98,9 +124,25 @@ export default function GestionGrupos({ usuarioId }) {
     window.open(`https://wa.me/?text=${texto}`, '_blank');
   };
 
+  const saldoDisponibles = limiteTotalPlan - totalInvitadosActuales;
+
   return (
     <div style={estilos.contenedor}>
-      {/* Se eliminó el doble título para ganar espacio limpio en pantalla */}
+      {/* Panel Superior de Control de Cuota / Saldo */}
+      <div style={estilos.panelCupos}>
+        <div style={estilos.itemCupo}>
+          <span style={estilos.labelCupo}>Límite de Invitados (Plan):</span>
+          <span style={estilos.valorCupo}>{limiteTotalPlan}</span>
+        </div>
+        <div style={estilos.itemCupo}>
+          <span style={estilos.labelCupo}>Invitados Registrados:</span>
+          <span style={{...estilos.valorCupo, color: '#00A89F'}}>{totalInvitadosActuales}</span>
+        </div>
+        <div style={estilos.itemCupo}>
+          <span style={estilos.labelCupo}>Saldo Disponible:</span>
+          <span style={{...estilos.valorCupo, color: saldoDisponibles > 0 ? '#2E7D32' : '#D32F2F'}}>{saldoDisponibles}</span>
+        </div>
+      </div>
 
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
 
@@ -122,26 +164,13 @@ export default function GestionGrupos({ usuarioId }) {
             </div>
 
             <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Nombre / Etiqueta de Invitados (Opcional)</label>
+              <label style={estilos.label}>Etiqueta Interna para Invitados (Opcional)</label>
               <input 
                 type="text" 
                 value={etiquetaInvitados} 
                 onChange={(e) => setEtiquetaInvitados(e.target.value)}
                 placeholder="Ej. Empresario, León, Tigre, Familia..."
                 style={estilos.input}
-              />
-            </div>
-
-            <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Límite de Invitados</label>
-              <input 
-                type="number" 
-                value={limiteInvitados} 
-                onChange={(e) => setLimiteInvitados(e.target.value)}
-                style={estilos.input}
-                min="1"
-                max="100"
-                required 
               />
             </div>
 
@@ -166,7 +195,6 @@ export default function GestionGrupos({ usuarioId }) {
                       <span style={estilos.badgeEtiqueta}>Perfil: {g.etiqueta_invitados}</span>
                     )}
                     <p style={estilos.detallesItem}>Código de Invitación: <b style={{color: '#00A89F'}}>{g.codigo_invitacion}</b></p>
-                    <p style={estilos.detallesItem}>Cupo máx: {g.limite_invitados} invitados</p>
                   </div>
                   <div style={estilos.botonesGrupo}>
                     <button onClick={() => verMiembros(g)} style={estilos.botonSecundario}>Ver Miembros</button>
@@ -226,6 +254,10 @@ export default function GestionGrupos({ usuarioId }) {
 
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
+  panelCupos: { display: 'flex', justifyContent: 'space-around', backgroundColor: '#FFF', padding: '12px', borderRadius: '8px', marginBottom: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
+  itemCupo: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' },
+  labelCupo: { fontSize: '0.7rem', color: '#666', fontWeight: 'bold' },
+  valorCupo: { fontSize: '1.1rem', fontWeight: 'bold', color: '#333' },
   mensajeGeneral: { fontSize: '0.85rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '6px 0' },
   seccionGrid: { display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '15px', alignItems: 'start' },
   cardFormulario: { backgroundColor: '#FFF', padding: '15px', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
@@ -237,7 +269,7 @@ const estilos = {
   input: { padding: '7px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' },
   botonPrimario: { padding: '9px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' },
   textoVacio: { fontSize: '0.75rem', color: '#777', textAlign: 'center', padding: '15px' },
-  listaGrupos: { display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' },
+  listaGrupos: { display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '350px', overflowY: 'auto' },
   itemGrupo: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderRadius: '6px', border: '1px solid #EEE', backgroundColor: '#FAFAFA' },
   nombreGrupoItem: { fontSize: '0.85rem', color: '#333', margin: '0 0 2px 0' },
   badgeEtiqueta: { display: 'inline-block', backgroundColor: '#E0F2F1', color: '#00796B', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', marginBottom: '3px' },

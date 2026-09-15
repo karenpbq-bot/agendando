@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 export default function InformacionCuenta({ usuarioId }) {
   const [datosUsuario, setDatosUsuario] = useState(null);
   const [gruposInscritos, setGruposInscritos] = useState([]);
+  const [gruposCreados, setGruposCreados] = useState([]);
   const [citasPendientes, setCitasPendientes] = useState([]);
   const [citasCanceladas, setCitasCanceladas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -28,35 +29,41 @@ export default function InformacionCuenta({ usuarioId }) {
       if (errUser) throw errUser;
       setDatosUsuario(userDat);
 
-      const esChair = userDat.rol === 'Chair';
+      // Verificamos de forma robusta si es Chair (Anfitrión)
+      const esChair = userDat.rol === 'Chair' || userDat.rol === 'ANFITRION';
 
-      // 2. Obtener grupos a los que pertenece (si es Invitado via agd_grupo_miembros, si es Chair los suyos o creados)
+      // 2. Cargar Grupos Creados si es Anfitrión
       if (esChair) {
-        const { data: gruposChair } = await supabase
+        const { data: gruposChair, error: errGc } = await supabase
           .from('agd_grupos')
-          .select('nombre_grupo, codigo_invitacion, created_at')
-          .eq('chair_id', usuarioId);
-        setGruposInscritos(gruposChair || []);
-      } else {
-        const { data: gruposMiembro } = await supabase
-          .from('agd_grupo_miembros')
-          .select('agd_grupos(nombre_grupo, codigo_invitacion)')
-          .eq('usuario_id', usuarioId);
+          .select('*')
+          .eq('chair_id', usuarioId)
+          .order('created_at', { ascending: false });
         
-        const formateados = gruposMiembro?.map(m => m.agd_grupos).filter(Boolean) || [];
+        if (!errGc) setGruposCreados(gruposChair || []);
+      }
+
+      // 3. Cargar Grupos a los que pertenece por invitación (Tabla puente)
+      const { data: gruposMiembro, error: errGm } = await supabase
+        .from('agd_grupo_miembros')
+        .select('agd_grupos(id, nombre_grupo, codigo_invitacion)')
+        .eq('usuario_id', usuarioId);
+      
+      if (!errGm && gruposMiembro) {
+        const formateados = gruposMiembro.map(m => m.agd_grupos).filter(Boolean);
         setGruposInscritos(formateados);
       }
 
-      // 3. Obtener Citas Pendientes (Registradas, Confirmadas o Propuestas)
+      // 4. Obtener Citas Pendientes
       const { data: pendData } = await supabase
         .from('agd_citas')
         .select('*')
-        .or(`chair_id.eq.${usuarioId},invitado_id.eq.${usuarioId}`) // Ajusta según tu esquema de citas
+        .or(`chair_id.eq.${usuarioId},invitado_id.eq.${usuarioId}`)
         .in('estado', ['Registrada', 'Confirmada', 'Propuesta_Reprogramacion']);
       
       setCitasPendientes(pendData || []);
 
-      // 4. Obtener Citas Canceladas
+      // 5. Obtener Citas Canceladas
       const { data: cancData } = await supabase
         .from('agd_citas')
         .select('*')
@@ -76,7 +83,7 @@ export default function InformacionCuenta({ usuarioId }) {
     return <p style={estilos.textoVacio}>Cargando información de la cuenta...</p>;
   }
 
-  const esChair = datosUsuario?.rol === 'Chair';
+  const esChair = datosUsuario?.rol === 'Chair' || datosUsuario?.rol === 'ANFITRION';
 
   return (
     <div style={estilos.contenedor}>
@@ -106,11 +113,33 @@ export default function InformacionCuenta({ usuarioId }) {
         )}
       </div>
 
-      {/* Sección 2: Grupos a los que pertenece */}
+      {/* Sección 2.1: Grupos Creados (Exclusivo para Anfitriones) */}
+      {esChair && (
+        <div style={estilos.cardSeccionCompleta}>
+          <h3 style={estilos.subSubTitulo}>Tus Grupos Creados ({gruposCreados.length})</h3>
+          {gruposCreados.length === 0 ? (
+            <p style={estilos.textoVacio}>Aún no has creado ningún grupo en este módulo.</p>
+          ) : (
+            <div style={estilos.listaGrid}>
+              {gruposCreados.map((g) => (
+                <div key={g.id} style={estilos.itemCard}>
+                  <h4 style={estilos.tituloItem}>{g.nombre_grupo}</h4>
+                  {g.etiqueta_invitados && (
+                    <span style={estilos.badgeEtiqueta}>Perfil: {g.etiqueta_invitados}</span>
+                  )}
+                  <p style={estilos.subItem}>Código: <b style={{color: '#00A89F'}}>{g.codigo_invitacion}</b></p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sección 2.2: Grupos a los que Pertenece por Invitación */}
       <div style={estilos.cardSeccionCompleta}>
-        <h3 style={estilos.subSubTitulo}>Grupos a los que Pertenece ({gruposInscritos.length})</h3>
+        <h3 style={estilos.subSubTitulo}>Grupos a los que Pertenece por Invitación ({gruposInscritos.length})</h3>
         {gruposInscritos.length === 0 ? (
-          <p style={estilos.textoVacio}>No estás asociado a ningún grupo actualmente.</p>
+          <p style={estilos.textoVacio}>No estás asociado a ningún grupo por invitación actualmente.</p>
         ) : (
           <div style={estilos.listaGrid}>
             {gruposInscritos.map((g, idx) => (
@@ -172,6 +201,7 @@ const estilos = {
   listaGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' },
   itemCard: { backgroundColor: '#FAFAFA', padding: '10px', borderRadius: '6px', border: '1px solid #EEE' },
   tituloItem: { fontSize: '0.85rem', color: '#333', margin: '0 0 4px 0' },
+  badgeEtiqueta: { display: 'inline-block', backgroundColor: '#E0F2F1', color: '#00796B', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', marginBottom: '4px' },
   subItem: { fontSize: '0.75rem', color: '#666', margin: 0 },
   itemCita: { backgroundColor: '#FAFAFA', padding: '8px', borderRadius: '6px', border: '1px solid #EEE', marginBottom: '6px' },
   textoCita: { fontSize: '0.8rem', color: '#333', margin: '0 0 2px 0' },

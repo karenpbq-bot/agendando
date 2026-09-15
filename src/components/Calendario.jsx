@@ -16,11 +16,11 @@ export default function Calendario({ usuarioId }) {
   const [jornadaChair, setJornadaChair] = useState({ 
     inicio: '08:30', 
     fin: '22:30',
-    duracionSesion: 60,
+    duracionSesion: 45,
     buffer: 15
   });
 
-  // Generamos las 24 horas del día en punto para el eje lateral izquierdo
+  // Eje lateral izquierdo: Las 24 horas en punto exactas (00:00 a 23:00)
   const horasDelDia = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -92,7 +92,7 @@ export default function Calendario({ usuarioId }) {
         setJornadaChair({
           inicio: configData.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30',
           fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30',
-          duracionSesion: configData.duracion_sesion_minutos || 60,
+          duracionSesion: configData.duracion_sesion_minutos || 45,
           buffer: configData.tiempo_buffer_minutos || 15
         });
       }
@@ -133,7 +133,7 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  const esDisponible = (fecha, minInicio, minFin) => {
+  const esDisponible = (fecha, minInicioHora, minFinHora) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
       const partes = strHora.split(':');
@@ -143,7 +143,8 @@ export default function Calendario({ usuarioId }) {
     const minJornadaIni = aMinutos(jornadaChair.inicio);
     const minJornadaFin = aMinutos(jornadaChair.fin);
 
-    if (minInicio < minJornadaIni || minFin > minJornadaFin) {
+    // Validación flexible: Si la hora se cruza con la jornada configurada (ej. 08:30)
+    if (minFinHora <= minJornadaIni || minInicioHora >= minJornadaFin) {
       return false; 
     }
 
@@ -170,7 +171,7 @@ export default function Calendario({ usuarioId }) {
       const minFinTramo = aMinutos(t.f);
 
       if (minInicioTramo !== null && minFinTramo !== null) {
-        if (minInicio < minFinTramo && minFin > minInicioTramo) {
+        if (minInicioHora < minFinTramo && minFinHora > minInicioTramo) {
           return false; 
         }
       }
@@ -193,9 +194,11 @@ export default function Calendario({ usuarioId }) {
       setEstadoCita(citaEncontrada.estado || 'confirmado');
     } else {
       setCitaExistenteId(null);
-      setHoraInicio(horaStr);
+      // Si hacen clic en una hora (ej. 08:00), autocompletamos con la hora real de inicio de jornada si aplica, o la hora seleccionada
+      const horaEfectiva = horaStr === '08:00' && jornadaChair.inicio === '08:30' ? '08:30' : horaStr;
+      setHoraInicio(horaEfectiva);
       
-      const [h, m] = horaStr.split(':').map(Number);
+      const [h, m] = horaEfectiva.split(':').map(Number);
       const totalMinFin = h * 60 + m + Number(jornadaChair.duracionSesion);
       const hFinCalc = Math.floor(totalMinFin / 60);
       const mFinCalc = totalMinFin % 60;
@@ -332,7 +335,6 @@ export default function Calendario({ usuarioId }) {
         <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
       </div>
 
-      {/* Contenedor Grid con Scroll Sincronizado y Columna Izquierda Fija */}
       <div style={estilos.gridCalendarioContainer}>
         <div style={{ ...estilos.gridHeaderRow, gridTemplateColumns: `70px repeat(${diasSemanaMes.length}, ${estilosEscala.minWidth})` }}>
           <div style={estilos.headerEsquina}>Hora</div>
@@ -351,10 +353,8 @@ export default function Calendario({ usuarioId }) {
 
             return (
               <div key={horaBase} style={{ ...estilos.gridRow, gridTemplateColumns: `70px repeat(${diasSemanaMes.length}, ${estilosEscala.minWidth})` }}>
-                {/* Columna Izquierda Fija */}
                 <div style={estilos.colHoraFija}>{horaBase}</div>
 
-                {/* Columnas de los Días */}
                 {diasSemanaMes.map(d => {
                   const disponible = esDisponible(d.fecha, minInicioHora, minFinHora);
                   const citaEncontrada = citas.find(c => {
@@ -530,7 +530,6 @@ const estilos = {
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' },
   
-  // Contenedor principal con CSS Grid y Scroll Global
   gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #EAEAEA' },
   gridHeaderRow: { display: 'grid', backgroundColor: '#00A89F', color: '#FFF', position: 'sticky', top: 0, zIndex: 3 },
   headerEsquina: { padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 4, borderRight: '1px solid rgba(255,255,255,0.2)' },

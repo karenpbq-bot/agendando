@@ -4,8 +4,8 @@ import { supabase } from '../supabaseClient';
 export default function GestionGrupos({ usuarioId }) {
   const [grupos, setGrupos] = useState([]);
   const [nombreGrupo, setNombreGrupo] = useState('');
-  const [codigoCliente, setCodigoCliente] = useState('TAM01');
-  const [limiteInvitados, setLimiteInvitados] = useState(20);
+  const [etiquetaInvitados, setEtiquetaInvitados] = useState(''); // Ej. Empresario, León, Tigre, Familia
+  const [limiteInvitados, setLimiteInvitados] = useState(50); // Por defecto 50 invitados
   const [grupoSeleccionado, setGrupoSeleccionado] = useState(null);
   const [miembrosGrupo, setMiembrosGrupo] = useState([]);
   const [mensaje, setMensaje] = useState('');
@@ -54,17 +54,20 @@ export default function GestionGrupos({ usuarioId }) {
         {
           chair_id: usuarioId,
           nombre_grupo: nombreGrupo,
-          codigo_cliente: codigoCliente || 'TAM01',
+          codigo_cliente: 'TAM01', // Asignado de forma interna y segura
           codigo_invitacion: codigoUnico,
-          limite_invitados: parseInt(limiteInvitados, 10) || 20,
+          limite_invitados: parseInt(limiteInvitados, 10) || 50,
+          etiqueta_invitados: etiquetaInvitados.trim() || null, // Opcional: Empresario, León, Tigre, etc.
           activo: true
         }
       ]);
 
       if (error) throw error;
 
-      setMensaje(`¡Grupo creado con éxito! Código de invitación: ${codigoUnico}`);
+      setMensaje(`¡Grupo creado con éxito! Código: ${codigoUnico}`);
       setNombreGrupo('');
+      setEtiquetaInvitados('');
+      setLimiteInvitados(50);
       cargarGruposChair();
     } catch (err) {
       setMensaje('Error al crear el grupo: ' + err.message);
@@ -97,7 +100,7 @@ export default function GestionGrupos({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      <h2 style={estilos.titulo}>Gestión de Grupos y Códigos de Invitación</h2>
+      {/* Se eliminó el doble título para ganar espacio limpio en pantalla */}
 
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
 
@@ -119,14 +122,13 @@ export default function GestionGrupos({ usuarioId }) {
             </div>
 
             <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Código de Cliente / Organización</label>
+              <label style={estilos.label}>Nombre / Etiqueta de Invitados (Opcional)</label>
               <input 
                 type="text" 
-                value={codigoCliente} 
-                onChange={(e) => setCodigoCliente(e.target.value)}
-                placeholder="Ej. TAM01"
+                value={etiquetaInvitados} 
+                onChange={(e) => setEtiquetaInvitados(e.target.value)}
+                placeholder="Ej. Empresario, León, Tigre, Familia..."
                 style={estilos.input}
-                required 
               />
             </div>
 
@@ -160,7 +162,10 @@ export default function GestionGrupos({ usuarioId }) {
                 <div key={g.id} style={estilos.itemGrupo}>
                   <div>
                     <h4 style={estilos.nombreGrupoItem}>{g.nombre_grupo}</h4>
-                    <p style={estilos.detallesItem}>Cliente: <b>{g.codigo_cliente}</b> | Código: <b style={{color: '#00A89F'}}>{g.codigo_invitacion}</b></p>
+                    {g.etiqueta_invitados && (
+                      <span style={estilos.badgeEtiqueta}>Perfil: {g.etiqueta_invitados}</span>
+                    )}
+                    <p style={estilos.detallesItem}>Código de Invitación: <b style={{color: '#00A89F'}}>{g.codigo_invitacion}</b></p>
                     <p style={estilos.detallesItem}>Cupo máx: {g.limite_invitados} invitados</p>
                   </div>
                   <div style={estilos.botonesGrupo}>
@@ -174,7 +179,7 @@ export default function GestionGrupos({ usuarioId }) {
         </div>
       </div>
 
-      {/* Modal o Panel de Miembros del Grupo Seleccionado */}
+      {/* Modal de Miembros del Grupo Seleccionado */}
       {grupoSeleccionado && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -220,26 +225,26 @@ export default function GestionGrupos({ usuarioId }) {
 }
 
 const estilos = {
-  contenedor: { padding: '15px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
-  titulo: { fontSize: '1.3rem', color: '#333', marginBottom: '15px', textAlign: 'center' },
-  mensajeGeneral: { fontSize: '0.85rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '8px 0' },
-  seccionGrid: { display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '20px', alignItems: 'start' },
-  cardFormulario: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
-  cardLista: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
-  subSubTitulo: { fontSize: '1rem', color: '#333', marginBottom: '12px', borderBottom: '2px solid #00A89F', paddingBottom: '6px' },
-  formulario: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  grupoInput: { display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' },
-  label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
-  input: { padding: '8px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' },
-  botonPrimario: { padding: '10px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '5px' },
-  textoVacio: { fontSize: '0.8rem', color: '#777', textAlign: 'center', padding: '15px' },
-  listaGrupos: { display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto' },
-  itemGrupo: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', borderRadius: '8px', border: '1px solid #EEE', backgroundColor: '#FAFAFA' },
-  nombreGrupoItem: { fontSize: '0.9rem', color: '#333', margin: '0 0 4px 0' },
-  detallesItem: { fontSize: '0.75rem', color: '#666', margin: '2px 0' },
-  botonesGrupo: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  botonSecundario: { padding: '6px 10px', borderRadius: '5px', border: '1px solid #00A89F', background: '#FFF', color: '#00A89F', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
-  botonWs: { padding: '6px 10px', borderRadius: '5px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  contenedor: { padding: '10px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
+  mensajeGeneral: { fontSize: '0.85rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '6px 0' },
+  seccionGrid: { display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '15px', alignItems: 'start' },
+  cardFormulario: { backgroundColor: '#FFF', padding: '15px', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
+  cardLista: { backgroundColor: '#FFF', padding: '15px', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
+  subSubTitulo: { fontSize: '0.95rem', color: '#333', marginBottom: '10px', borderBottom: '2px solid #00A89F', paddingBottom: '4px' },
+  formulario: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  grupoInput: { display: 'flex', flexDirection: 'column', gap: '3px', textAlign: 'left' },
+  label: { fontSize: '0.7rem', fontWeight: 'bold', color: '#444' },
+  input: { padding: '7px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' },
+  botonPrimario: { padding: '9px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' },
+  textoVacio: { fontSize: '0.75rem', color: '#777', textAlign: 'center', padding: '15px' },
+  listaGrupos: { display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' },
+  itemGrupo: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderRadius: '6px', border: '1px solid #EEE', backgroundColor: '#FAFAFA' },
+  nombreGrupoItem: { fontSize: '0.85rem', color: '#333', margin: '0 0 2px 0' },
+  badgeEtiqueta: { display: 'inline-block', backgroundColor: '#E0F2F1', color: '#00796B', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold', marginBottom: '3px' },
+  detallesItem: { fontSize: '0.7rem', color: '#666', margin: '1px 0' },
+  botonesGrupo: { display: 'flex', flexDirection: 'column', gap: '5px' },
+  botonSecundario: { padding: '5px 8px', borderRadius: '4px', border: '1px solid #00A89F', background: '#FFF', color: '#00A89F', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
+  botonWs: { padding: '5px 8px', borderRadius: '4px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '550px', boxSizing: 'border-box' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' },

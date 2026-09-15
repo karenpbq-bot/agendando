@@ -18,7 +18,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   
   const [rubro, setRubro] = useState('');
   const [temasInteres, setTemasInteres] = useState('');
-  const [plan, setPlan] = useState('prueba');  
+  const [plan, setPlan] = useState('prueba');  // Solo para Anfitriones
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
   
   const [cargando, setCargando] = useState(false);
@@ -31,7 +31,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     setMensaje('');
 
     try {
-      // Buscamos si el DNI o el Teléfono ya están registrados en la base de datos
       const { data: usuarioExistente, error } = await supabase
         .from('usuarios')
         .select('nombre_completo, rol')
@@ -41,7 +40,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
       if (error) throw error;
 
       if (usuarioExistente) {
-        // Mapeamos el rol de la BD ('Chair' -> Anfitrión, 'Empresario' -> Invitado) para mostrarlo amigablemente
         const rolAmigable = usuarioExistente.rol === 'Chair' ? 'Anfitrión' : 'Invitado';
         
         setMensaje(
@@ -51,8 +49,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // Si no existe, pasamos directamente al llenado del resto del formulario o ejecutamos el registro según corresponda
-      // (Si es Anfitrión, pasamos a sus campos; si es Invitado, validamos su código)
       if (tipoSeleccionado === 'INVITADO') {
         await procesarRegistroInvitado();
       } else {
@@ -65,7 +61,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     }
   };
 
-  // 2. Lógica específica para registrar un Anfitrión
+  // 2. Lógica para registrar un Anfitrión (con plan y cobro)
   const procesarRegistroAnfitrion = async () => {
     if (!aceptoTerminos) {
       setMensaje('Debes aceptar las condiciones del servicio y la tarifa.');
@@ -74,7 +70,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     }
 
     try {
-      // Validar nombre de usuario único
       const { data: userCheck } = await supabase
         .from('usuarios')
         .select('nombre_usuario')
@@ -100,7 +95,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             correo: correo.trim(),
             rubro: rubro || null,
             temas_interes: temasInteres || null,
-            rol: 'Chair', // Rol interno
+            rol: 'Chair',
             plan: plan,
             pago_al_dia: plan === 'prueba',
             activo: true
@@ -122,10 +117,10 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     }
   };
 
-  // 3. Lógica específica para registrar un Invitado (Validando el código de 7 caracteres)
+  // 3. Lógica para registrar un Invitado (Sin planes ni cobros, vinculado al Anfitrión)
   const procesarRegistroInvitado = async () => {
     if (!aceptoTerminos) {
-      setMensaje('Debes aceptar las condiciones del servicio y la tarifa.');
+      setMensaje('Debes aceptar las condiciones del servicio.');
       setCargando(false);
       return;
     }
@@ -133,7 +128,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     try {
       const codigoLimpio = codigoInvitacion.trim().toUpperCase();
 
-      // Validar que el código de invitación de 7 caracteres exista y esté activo
+      // Validar código de invitación de 7 caracteres
       const { data: grupoEncontrado, error: errorGrupo } = await supabase
         .from('agd_grupos')
         .select('id, nombre_grupo, chair_id, etiqueta_invitados')
@@ -147,7 +142,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // Validar nombre de usuario único
       const { data: userCheck } = await supabase
         .from('usuarios')
         .select('nombre_usuario')
@@ -160,7 +154,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // Crear usuario Invitado
+      // Crear usuario Invitado (Plan gratuito / sin cobro propio)
       const { data: nuevoUsuario, error: errorUsuario } = await supabase
         .from('usuarios')
         .insert([
@@ -174,9 +168,9 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             correo: correo.trim(),
             rubro: rubro || null,
             temas_interes: temasInteres || null,
-            rol: 'Empresario', // Rol interno
-            plan: plan,
-            pago_al_dia: plan === 'prueba',
+            rol: 'Empresario',
+            plan: 'invitado_cortesia', // Sin cobro individual
+            pago_al_dia: true, // Su acceso depende de la cuenta del Anfitrión
             activo: true
           }
         ])
@@ -244,7 +238,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     );
   }
 
-  // PANTALLA 2: Formulario de Registro con validación previa de duplicados
+  // PANTALLA 2: Formulario de Registro
   return (
     <div style={estilos.contenedor}>
       <div style={estilos.tarjeta}>
@@ -310,7 +304,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
                 style={{ ...estilos.input, textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px', borderColor: '#00A89F' }}
                 required 
               />
-              <span style={estilos.ayudaInput}>Proporcionado por tu anfitrión.</span>
+              <span style={estilos.ayudaInput}>Proporcionado por tu anfitrión. Acceso sin costo.</span>
             </div>
           )}
 
@@ -373,19 +367,22 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             </div>
           </div>
 
-          <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Tipo de Plan</label>
-            <select 
-              value={plan} 
-              onChange={(e) => setPlan(e.target.value)}
-              style={estilos.input}
-            >
-              <option value="prueba">Prueba Gratuita (1 Semana)</option>
-              <option value="mensual">Mensual</option>
-              <option value="semestral">Semestral</option>
-              <option value="anual">Anual</option>
-            </select>
-          </div>
+          {/* Selector de Plan: ÚNICO para Anfitriones (Los invitados no pagan ni eligen plan) */}
+          {tipoSeleccionado === 'ANFITRION' && (
+            <div style={estilos.grupoInput}>
+              <label style={estilos.etiqueta}>Tipo de Plan (Suscripción Anfitrión)</label>
+              <select 
+                value={plan} 
+                onChange={(e) => setPlan(e.target.value)}
+                style={estilos.input}
+              >
+                <option value="prueba">Prueba Gratuita (1 Semana)</option>
+                <option value="mensual">Mensual</option>
+                <option value="semestral">Semestral</option>
+                <option value="anual">Anual</option>
+              </select>
+            </div>
+          )}
 
           <div style={estilos.grupoCheckbox}>
             <input 
@@ -444,7 +441,7 @@ const estilos = {
   grupoCheckbox: { display: 'flex', alignItems: 'flex-start', gap: '8px', textAlign: 'left', marginTop: '3px' },
   checkbox: { cursor: 'pointer', width: '16px', height: '16px', marginTop: '2px' },
   etiquetaCheckbox: { fontSize: '0.80rem', color: '#666666', cursor: 'pointer', lineHeight: '1.2' },
-  mensaje: { fontSize: '0.85rem', color: '#D32F2F', fontWeight: '500', margin: '0', lineHeight: '1.4', padding: '5px', backgroundColor: '#FFEBEE', borderRadius: '4px' },
+  mensaje: { fontSize: '0.85rem', color: '#D32F2F', fontWeight: '500', margin: '0', lineHeight: '1.4', padding: '8px', backgroundColor: '#FFEBEE', borderRadius: '4px', textAlign: 'left' },
   boton: { padding: '11px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFFFFF', fontSize: '0.95rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '3px' },
   botonSecundario: { background: 'none', border: 'none', color: '#00A89F', fontSize: '0.85rem', cursor: 'pointer', marginTop: '10px', textDecoration: 'underline' }
 };

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import Disponibilidad from '../components/Disponibilidad';
-import Calendario from '../components/Calendario'; // Importamos el módulo del Bloque 2
+import Calendario from '../components/Calendario';
 import GestionGrupos from '../components/GestionGrupos';
-import Reprogramaciones from '../components/Reprogramaciones'; // <-- Nueva importación
+import Reprogramaciones from '../components/Reprogramaciones'; // <-- 1. Importación añadida
 
 // Subcomponente modular: Bloque tipo acordeón (Desplegable)
 const BloqueDesplegable = ({ titulo, isOpen, onClick, children }) => {
@@ -95,6 +95,17 @@ export default function Dashboard({ usuarioData, onCerrarSesion }) {
               onClick={() => alternarBloque(3)}
             >
               <GestionGrupos usuarioId={usuarioData?.id} />
+            </BloqueDesplegable>
+          )}
+
+          {/* Bloque 5: Gestión de Reprogramaciones (Nuevo) */}
+          {esChair && (
+            <BloqueDesplegable 
+              titulo="Gestión de Reprogramaciones" 
+              isOpen={bloqueAbierto === 5} 
+              onClick={() => alternarBloque(5)}
+            >
+              <Reprogramaciones usuarioId={usuarioData?.id} />
             </BloqueDesplegable>
           )}
 

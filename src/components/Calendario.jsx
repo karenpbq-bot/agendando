@@ -38,15 +38,13 @@ export default function Calendario({ usuarioId }) {
   
   const [mensaje, setMensaje] = useState('');
 
-  // Generador de días según la vista seleccionada (mes, semana o trimestre)
+  // Generador de días según la vista seleccionada
   useEffect(() => {
     const [anio, mes] = mesSeleccionado.split('-').map(Number);
     let listaDiasTotal = [];
 
     if (vistaEscala === 'semana') {
-      // Vista Semanal: Tomamos 7 días a partir del primer día del mes seleccionado (o la semana actual)
       const primerDiaMes = new Date(anio, mes - 1, 1);
-      // Ajustamos al lunes de esa semana o tomamos 7 días corridos
       let diaInicioSemana = new Date(primerDiaMes);
       
       for (let i = 0; i < 7; i++) {
@@ -112,7 +110,7 @@ export default function Calendario({ usuarioId }) {
         .from('agd_configuracion_chair')
         .select('jornada_inicio, jornada_fin, duracion_sesion_minutos, tiempo_buffer_minutos')
         .eq('usuario_id', usuarioId)
-        .single();
+        .maybeSingle();
 
       if (configData) {
         setJornadaChair({
@@ -140,22 +138,27 @@ export default function Calendario({ usuarioId }) {
         );
       }
 
-      const { data: dataRest, error: errorRest } = await supabase
+      const { data: dataRest } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
         .eq('usuario_id', usuarioId)
         .in('mes_periodo', mesesFiltro);
 
-      if (errorRest) console.error('Error cargando restricciones:', errorRest);
       if (dataRest) setRestricciones(dataRest);
 
-      const { data: dataCitas } = await supabase
+      // Cargar citas del Chair asegurando compatibilidad
+      const { data: dataCitas, error: errCitas } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, telefono, email)')
         .eq('chair_id', usuarioId);
-      if (dataCitas) setCitas(dataCitas);
+
+      if (errCitas) {
+        console.error('Error cargando citas:', errCitas.message);
+      } else if (dataCitas) {
+        setCitas(dataCitas);
+      }
     } catch (err) {
-      console.error('Error cargando datos de Supabase:', err);
+      console.error('Error general cargando datos de Supabase:', err);
     }
   };
 
@@ -300,7 +303,7 @@ export default function Calendario({ usuarioId }) {
       }
 
       setModalAbierto(false);
-      cargarDatosSupabase();
+      await cargarDatosSupabase();
       
       if (telefonoDestino && estadoCita !== 'cancelado') {
         const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado en estado *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom}.`);
@@ -319,8 +322,6 @@ export default function Calendario({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      {/* Se eliminó el título repetido "Calendario de Sesiones" para ganar espacio vertical */}
-      
       <div style={estilos.controlesSuperiores}>
         <div style={estilos.grupoMes}>
           <label style={estilos.labelControl}>Mes Base:</label>
@@ -576,7 +577,7 @@ const estilos = {
   headerDia: { padding: '6px 4px', textAlign: 'center', fontSize: '0.7rem' },
   numDia: { fontWeight: 'bold' },
   
-  gridBodyScroll: { maxHeight: '620px', overflowY: 'auto', overflowX: 'auto' }, // Mayor altura para mostrar más horas en pantalla
+  gridBodyScroll: { maxHeight: '620px', overflowY: 'auto', overflowX: 'auto' },
   gridRow: { display: 'grid', borderBottom: '1px solid #EEE' },
   colHoraFija: { padding: '4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 2, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   

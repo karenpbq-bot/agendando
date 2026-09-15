@@ -64,7 +64,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   // 2. Lógica para registrar un Anfitrión (con plan y cobro)
   const procesarRegistroAnfitrion = async () => {
     if (!aceptoTerminos) {
-      setMensaje('Debes aceptar las condiciones del servicio y la tarifa.');
+      setMensaje('Debes aceptar las condiciones del servicio y las tarifas vigentes.');
       setCargando(false);
       return;
     }
@@ -169,8 +169,8 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             rubro: rubro || null,
             temas_interes: temasInteres || null,
             rol: 'Empresario',
-            plan: 'invitado_cortesia', // Sin cobro individual
-            pago_al_dia: true, // Su acceso depende de la cuenta del Anfitrión
+            plan: 'invitado_cortesia',
+            pago_al_dia: true,
             activo: true
           }
         ])
@@ -367,7 +367,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             </div>
           </div>
 
-          {/* Selector de Plan: ÚNICO para Anfitriones (Los invitados no pagan ni eligen plan) */}
+          {/* Selector de Plan: ÚNICO para Anfitriones */}
           {tipoSeleccionado === 'ANFITRION' && (
             <div style={estilos.grupoInput}>
               <label style={estilos.etiqueta}>Tipo de Plan (Suscripción Anfitrión)</label>
@@ -393,7 +393,9 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
               style={estilos.checkbox}
             />
             <label htmlFor="terminos" style={estilos.etiquetaCheckbox}>
-              Acepto las condiciones del servicio y las tarifas vigentes.
+              {tipoSeleccionado === 'ANFITRION' 
+                ? 'Acepto las condiciones del servicio y las tarifas vigentes.' 
+                : 'Acepto las condiciones del servicio.'}
             </label>
           </div>
 

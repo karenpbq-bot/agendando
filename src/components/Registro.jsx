@@ -8,14 +8,14 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
-  const [codigoEmpresa, setCodigoEmpresa] = useState('');
+  const [codigoInvitacion, setCodigoInvitacion] = useState(''); // Código de 7 caracteres del Chair
   
-  // Nuevos campos opcionales
+  // Campos opcionales
   const [rubro, setRubro] = useState('');
   const [temasInteres, setTemasInteres] = useState('');
   
-  const [rol, setRol] = useState('Empresario'); 
-  const [plan, setPlan] = useState('prueba'); 
+  const [rol, setRol] = useState('Empresario'); // Invitado / Empresario por defecto
+  const [plan, setPlan] = useState('prueba');  
   const [aceptoTerminos, setAceptoTerminos] = useState(false);
   
   const [cargando, setCargando] = useState(false);
@@ -32,23 +32,41 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     setMensaje('');
 
     try {
-      const { data: empresaEncontrada, error: errorEmpresa } = await supabase
-        .from('empresas')
-        .select('id, nombre')
-        .eq('codigo_empresa', codigoEmpresa.trim().toUpperCase())
-        .single();
+      const codigoLimpio = codigoInvitacion.trim().toUpperCase();
 
-      if (errorEmpresa || !empresaEncontrada) {
-        setMensaje('El código de organización es inválido o no existe.');
+      // 1. Validar que el código de invitación de 7 caracteres exista y esté activo
+      const { data: grupoEncontrado, error: errorGrupo } = await supabase
+        .from('agd_grupos')
+        .select('id, nombre_grupo, chair_id, etiqueta_invitados')
+        .eq('codigo_invitacion', codigoLimpio)
+        .eq('activo', true)
+        .maybeSingle();
+
+      if (errorGrupo || !grupoEncontrado) {
+        setMensaje('El código de invitación de 7 caracteres es inválido o el grupo no está activo.');
         setCargando(false);
         return;
       }
 
+      // 2. Validar que el DNI o Teléfono no estén previamente registrados (Evita duplicados)
+      const { data: usuarioDuplicado } = await supabase
+        .from('usuarios')
+        .select('id, dni, telefono')
+        .or(`dni.eq.${dni.trim()},telefono.eq.${telefono.trim()}`)
+        .maybeSingle();
+
+      if (usuarioDuplicado) {
+        setMensaje(`El DNI (${dni}) o el Teléfono (${telefono}) ya se encuentran registrados. Por favor, inicia sesión.`);
+        setCargando(false);
+        return;
+      }
+
+      // 3. Validar que el nombre de usuario no esté en uso
       const { data: usuarioExistente } = await supabase
         .from('usuarios')
         .select('nombre_usuario')
-        .eq('nombre_usuario', nombreUsuario)
-        .single();
+        .eq('nombre_usuario', nombreUsuario.trim())
+        .maybeSingle();
 
       if (usuarioExistente) {
         setMensaje('El nombre de usuario ya está en uso. Elige otro.');
@@ -56,20 +74,20 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      const { data, error } = await supabase
+      // 4. Insertar el nuevo usuario en la tabla 'usuarios'
+      const { data: nuevoUsuario, error: errorUsuario } = await supabase
         .from('usuarios')
         .insert([
           {
             nombre_completo: nombreCompleto,
-            nombre_usuario: nombreUsuario,
+            nombre_usuario: nombreUsuario.trim(),
             password_hash: password,
-            dni: dni,
-            telefono: telefono,
-            email: correo,
-            correo: correo,
-            empresa_id: empresaEncontrada.id,
-            rubro: rubro || null,          // Opcional
-            temas_interes: temasInteres || null, // Opcional
+            dni: dni.trim(),
+            telefono: telefono.trim(),
+            email: correo.trim(),
+            correo: correo.trim(),
+            rubro: rubro || null,
+            temas_interes: temasInteres || null,
             rol: rol,
             plan: plan,
             pago_al_dia: plan === 'prueba',
@@ -79,16 +97,36 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         .select()
         .single();
 
-      if (error) {
-        setMensaje('Error al registrar usuario: ' + error.message);
-      } else {
-        setMensaje(`¡Registro exitoso vinculado a ${empresaEncontrada.nombre}! Iniciando sesión...`);
-        setTimeout(() => {
-          onRegistroExitoso(data);
-        }, 1500);
+      if (errorUsuario) {
+        setMensaje('Error al registrar usuario: ' + errorUsuario.message);
+        setCargando(false);
+        return;
       }
+
+      // 5. Vincular al usuario automáticamente a la tabla puente 'agd_grupo_miembros'
+      const { error: errorMiembro } = await supabase
+        .from('agd_grupo_miembros')
+        .insert([
+          {
+            grupo_id: grupoEncontrado.id,
+            usuario_id: nuevoUsuario.id,
+            rol_en_grupo: rol === 'Chair' ? 'Chair' : 'Invitado',
+            alias_invitado: grupoEncontrado.etiqueta_invitados || null,
+            codigo_usado: codigoLimpio
+          }
+        ]);
+
+      if (errorMiembro) {
+        console.error('Error vinculando miembro al grupo:', errorMiembro.message);
+      }
+
+      setMensaje(`¡Registro exitoso en el grupo "${grupoEncontrado.nombre_grupo}"! Iniciando sesión...`);
+      setTimeout(() => {
+        onRegistroExitoso(nuevoUsuario);
+      }, 1500);
+
     } catch (err) {
-      setMensaje('Error de conexión con la base de datos.');
+      setMensaje('Error de conexión con la base de datos: ' + err.message);
     } finally {
       setCargando(false);
     }
@@ -115,13 +153,14 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
           </div>
 
           <div style={estilos.grupoInput}>
-            <label style={estilos.etiqueta}>Código de Organización o Empresa</label>
+            <label style={estilos.etiqueta}>Código de Invitación (7 Caracteres Obligatorio)</label>
             <input 
               type="text" 
-              value={codigoEmpresa}
-              onChange={(e) => setCodigoEmpresa(e.target.value)}
-              placeholder="Ingresa tu código de acceso"
-              style={{ ...estilos.input, textTransform: 'uppercase' }}
+              value={codigoInvitacion}
+              onChange={(e) => setCodigoInvitacion(e.target.value)}
+              placeholder="Ej. VBETKTT"
+              maxLength={7}
+              style={{ ...estilos.input, textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}
               required 
             />
           </div>
@@ -184,7 +223,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             />
           </div>
 
-          {/* Campos Opcionales de Red de Contactos */}
+          {/* Campos Opcionales */}
           <div style={estilos.fila}>
             <div style={estilos.grupoInput}>
               <label style={estilos.etiqueta}>Rubro o Sector <span style={estilos.opcional}>(Opcional)</span></label>
@@ -216,7 +255,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
                 onChange={(e) => setRol(e.target.value)}
                 style={estilos.input}
               >
-                <option value="Empresario">Empresario</option>
+                <option value="Empresario">Invitado / Empresario</option>
                 <option value="Chair">Chair</option>
               </select>
             </div>

@@ -19,7 +19,6 @@ export default function Reprogramaciones({ usuarioId }) {
 
   const cargarListadosReprogramacion = async () => {
     try {
-      // 1. Cargar citas canceladas pendientes de reprogramar
       const { data: dataCanceladas, error: errC } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, email, telefono)')
@@ -28,7 +27,6 @@ export default function Reprogramaciones({ usuarioId }) {
 
       if (!errC && dataCanceladas) setCanceladas(dataCanceladas);
 
-      // 2. Cargar reprogramaciones en curso (propuestas enviadas sin link o pendientes de confirmar)
       const { data: dataEnCurso, error: errEC } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, email, telefono)')
@@ -42,7 +40,6 @@ export default function Reprogramaciones({ usuarioId }) {
     }
   };
 
-  // Al hacer clic en una cancelación, cargamos los horarios libres del Anfitrión
   const seleccionarParaReprogramar = async (cita) => {
     setCitaSeleccionada(cita);
     setMensaje('');
@@ -50,9 +47,8 @@ export default function Reprogramaciones({ usuarioId }) {
     setLinkSesion('');
 
     try {
-      // Obtenemos los bloques de disponibilidad horaria libre configurados por el Anfitrión
       const { data, error } = await supabase
-        .from('agd_disponibilidad') // Ajusta al nombre de tu tabla de disponibilidad
+        .from('agd_disponibilidad')
         .select('*')
         .eq('chair_id', usuarioId)
         .eq('disponible', true)
@@ -107,7 +103,7 @@ export default function Reprogramaciones({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      <h2 style={estilos.titulo}>Gestión de Reprogramaciones</h2>
+      {/* Título duplicado eliminado para optimizar espacio */}
 
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
 
@@ -211,27 +207,26 @@ export default function Reprogramaciones({ usuarioId }) {
 }
 
 const estilos = {
-  contenedor: { padding: '15px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
-  titulo: { fontSize: '1.3rem', color: '#333', marginBottom: '15px', textAlign: 'center' },
-  mensajeGeneral: { fontSize: '0.85rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '8px 0' },
-  gridContenedor: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' },
+  contenedor: { padding: '10px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
+  mensajeGeneral: { fontSize: '0.85rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '6px 0' },
+  gridContenedor: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'start' },
   columna: { display: 'flex', flexDirection: 'column' },
   cardSeccion: { backgroundColor: '#FFF', padding: '15px', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
   subSubTitulo: { fontSize: '0.95rem', color: '#333', marginBottom: '10px', borderBottom: '2px solid #00A89F', paddingBottom: '4px' },
-  textoVacio: { fontSize: '0.8rem', color: '#777', textAlign: 'center', padding: '15px' },
+  textoVacio: { fontSize: '0.75rem', color: '#777', textAlign: 'center', padding: '15px' },
   itemLista: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderRadius: '6px', border: '1px solid #EEE', backgroundColor: '#FAFAFA', marginBottom: '8px' },
   itemListaEnCurso: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', borderRadius: '6px', border: '1px solid #FFE0B2', backgroundColor: '#FFF8E1', marginBottom: '8px' },
   textoItem: { fontSize: '0.8rem', color: '#333', margin: '0 0 2px 0' },
   textoItemDetalle: { fontSize: '0.7rem', color: '#666', margin: 0 },
   badgeEspera: { fontSize: '0.65rem', backgroundColor: '#FF8F00', color: '#FFF', padding: '3px 6px', borderRadius: '4px', fontWeight: 'bold' },
-  botonAccion: { padding: '6px 10px', borderRadius: '4px', border: 'none', background: '#00A89F', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
-  formulario: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  infoSeleccion: { fontSize: '0.85rem', color: '#00796B', margin: '0 0 5px 0', backgroundColor: '#E0F2F1', padding: '8px', borderRadius: '4px' },
-  grupoInput: { display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' },
-  label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
-  input: { padding: '8px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' },
+  botonAccion: { padding: '5px 8px', borderRadius: '4px', border: 'none', background: '#00A89F', color: '#FFF', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
+  formulario: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  infoSeleccion: { fontSize: '0.8rem', color: '#00796B', margin: '0 0 5px 0', backgroundColor: '#E0F2F1', padding: '6px', borderRadius: '4px' },
+  grupoInput: { display: 'flex', flexDirection: 'column', gap: '3px', textAlign: 'left' },
+  label: { fontSize: '0.7rem', fontWeight: 'bold', color: '#444' },
+  input: { padding: '7px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' },
   ayudaInput: { fontSize: '0.65rem', color: '#666', marginTop: '2px' },
-  listaHorarios: { maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' },
-  itemHorario: { padding: '8px', borderRadius: '6px', border: '1px solid #E0E0E0', fontSize: '0.8rem', cursor: 'pointer' },
-  botonPrimario: { padding: '10px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '5px' }
+  listaHorarios: { maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' },
+  itemHorario: { padding: '7px', borderRadius: '6px', border: '1px solid #E0E0E0', fontSize: '0.75rem', cursor: 'pointer' },
+  botonPrimario: { padding: '9px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
 };

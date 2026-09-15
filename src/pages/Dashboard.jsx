@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Disponibilidad from '../components/Disponibilidad';
 import Calendario from '../components/Calendario'; // Importamos el módulo del Bloque 2
 import GestionGrupos from '../components/GestionGrupos';
+import Reprogramaciones from '../components/Reprogramaciones'; // <-- Nueva importación
 
 // Subcomponente modular: Bloque tipo acordeón (Desplegable)
 const BloqueDesplegable = ({ titulo, isOpen, onClick, children }) => {

@@ -13,11 +13,7 @@ export default function Reprogramaciones({ usuarioId }) {
   const [horariosLibres, setHorariosLibres] = useState([]);
   const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
 
-  // Campos del formulario
-  const [estadoCita, setEstadoCita] = useState('confirmado');
-  const [tipoSession, setTipoSession] = useState('Individual');
-  const [empresarioId, setEmpresarioId] = useState('');
-  const [nombreGrupo, setNombreGrupo] = useState('');
+  // Campo opcional de enlace de reunión
   const [linkZoom, setLinkZoom] = useState('');
 
   const [mensaje, setMensaje] = useState('');
@@ -36,7 +32,6 @@ export default function Reprogramaciones({ usuarioId }) {
       const { data: dataEmp } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol');
-      if (dataEmp) setEmpresarios(dataEmp);
 
       const { data: dataCanceladas } = await supabase
         .from('agd_citas')
@@ -166,7 +161,8 @@ export default function Reprogramaciones({ usuarioId }) {
                 fecha: fechaStr,
                 horaInicio: slotIniStr,
                 horaFin: slotFinStr,
-                label: `📅 ${fechaStr} | ⏰ ${slotIniStr} - ${slotFinStr}`
+                // Sin icono y formateado en una sola línea compacta
+                label: `${fechaStr}  |  ${slotIniStr} - ${slotFinStr}`
               });
             }
           }
@@ -188,10 +184,6 @@ export default function Reprogramaciones({ usuarioId }) {
     setMensaje('');
     setHorarioSeleccionado(null);
     setLinkZoom(cita.link_zoom || '');
-    setTipoSession(cita.tipo_sesion || 'Individual');
-    setEmpresarioId(cita.empresario_id || '');
-    setNombreGrupo(cita.nombre_grupo || '');
-    setEstadoCita('confirmado');
     await calcularEspaciosLibres(dias, cita);
   };
 
@@ -214,7 +206,7 @@ export default function Reprogramaciones({ usuarioId }) {
 
     try {
       const tieneLink = linkSesion && linkSesion.trim() !== '';
-      const nuevoEstado = tieneLink ? (estadoCita || 'confirmado') : 'Propuesta_Reprogramacion';
+      const nuevoEstado = tieneLink ? 'confirmado' : 'Propuesta_Reprogramacion';
 
       const { error } = await supabase
         .from('agd_citas')
@@ -222,9 +214,6 @@ export default function Reprogramaciones({ usuarioId }) {
           fecha_cita: horarioSeleccionado.fecha,
           hora_inicio: horarioSeleccionado.horaInicio,
           hora_fin: horarioSeleccionado.horaFin,
-          tipo_sesion: tipoSession,
-          empresario_id: tipoSession === 'Individual' ? Number(empresarioId) : null,
-          nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
           link_zoom: tieneLink ? linkSesion.trim() : null,
           estado: nuevoEstado
         })
@@ -235,7 +224,7 @@ export default function Reprogramaciones({ usuarioId }) {
       setMensaje(
         tieneLink 
           ? '¡Cita reprogramada y confirmada con éxito!' 
-          : 'Propuesta enviada sin enlace. La cita pasó a "Reprogramaciones en curso".'
+          : 'Propuesta enviada. Solicitud de confirmación enviada al invitado.'
       );
 
       setCitaSeleccionada(null);
@@ -291,72 +280,19 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
         </div>
       ) : (
-        /* PANTALLA DEDICADA DE REPROGRAMACIÓN AMPLIADA */
+        /* PANTALLA DEDICADA DE SELECCIÓN DE HORARIO */
         <div style={estilos.cardSeccionAmpliada}>
           <div style={estilos.headerPantallaReprogramacion}>
             <button onClick={() => setCitaSeleccionada(null)} style={estilos.botonVolver}>
               ❮ Volver a la Bandeja
             </button>
-            <h3 style={{...estilos.subSubTitulo, margin: 0, border: 'none'}}>Gestión de Reprogramación</h3>
+            <h3 style={{...estilos.subSubTitulo, margin: 0, border: 'none'}}>Seleccionar Nuevo Horario</h3>
           </div>
 
           <form onSubmit={enviarPropuestaReprogramacion} style={estilos.formulario}>
             <p style={estilos.infoSeleccion}>
               Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>
             </p>
-
-            <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Estado de la Sesión</label>
-              <select 
-                value={estadoCita} 
-                onChange={(e) => setEstadoCita(e.target.value)}
-                style={{...estilos.input, fontWeight: 'bold'}}
-              >
-                <option value="confirmado">Confirmado / Activo</option>
-                <option value="reservado">Reservado</option>
-              </select>
-            </div>
-
-            <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Tipo de Sesión</label>
-              <select 
-                value={tipoSession} 
-                onChange={(e) => setTipoSession(e.target.value)}
-                style={estilos.input}
-              >
-                <option value="Individual">Individual (Azul Profesional)</option>
-                <option value="Grupal">Grupal (Verde Petróleo)</option>
-              </select>
-            </div>
-
-            {tipoSession === 'Individual' ? (
-              <div style={estilos.grupoInput}>
-                <label style={estilos.label}>Seleccionar Invitado / Empresario</label>
-                <select 
-                  value={empresarioId} 
-                  onChange={(e) => setEmpresarioId(e.target.value)}
-                  style={estilos.input}
-                  required
-                >
-                  <option value="">Seleccione...</option>
-                  {empresarios.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.nombre_completo} ({emp.rol})</option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div style={estilos.grupoInput}>
-                <label style={estilos.label}>Nombre del Grupo / Directorio</label>
-                <input 
-                  type="text"
-                  value={nombreGrupo}
-                  onChange={(e) => setNombreGrupo(e.target.value)}
-                  placeholder="Ej. Directorio A"
-                  style={estilos.input}
-                  required
-                />
-              </div>
-            )}
 
             {/* Botones de Rango de Días */}
             <div style={estilos.filaBotonesRango}>
@@ -377,7 +313,7 @@ export default function Reprogramaciones({ usuarioId }) {
             </div>
 
             <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Seleccionar Espacio Libre en tu Agenda:</label>
+              <label style={estilos.label}>Espacios Libres Disponibles en tu Agenda:</label>
               {cargando ? (
                 <p style={estilos.textoVacio}>Buscando espacios libres...</p>
               ) : horariosLibres.length === 0 ? (
@@ -414,7 +350,7 @@ export default function Reprogramaciones({ usuarioId }) {
             </div>
 
             <button type="submit" disabled={cargando || !horarioSeleccionado} style={estilos.botonPrimario}>
-              {cargando ? 'Procesando...' : 'Confirmar Reprogramación'}
+              {cargando ? 'Procesando...' : 'Solicitar Confirmación'}
             </button>
           </form>
         </div>
@@ -451,7 +387,7 @@ const estilos = {
   label: { fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' },
   input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
   ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
-  listaHorariosAmplia: { maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
-  itemHorario: { padding: '12px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' },
+  listaHorariosAmplia: { maxHeight: '340px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
+  itemHorario: { padding: '12px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', whiteSpace: 'nowrap', overflowX: 'auto' },
   botonPrimario: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px', width: '100%', boxShadow: '0 4px 10px rgba(0,168,159,0.3)' }
 };

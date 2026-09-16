@@ -11,6 +11,7 @@ export default function Reprogramaciones({ usuarioId }) {
   // Opciones de rango
   const [rangoDias, setRangoDias] = useState(7);
   const [horariosAgrupadosPorDia, setHorariosAgrupadosPorDia] = useState({});
+  const [diasAbiertos, setDiasAbiertos] = useState({});
   const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
 
   // Campo opcional de enlace de reunión
@@ -199,6 +200,13 @@ export default function Reprogramaciones({ usuarioId }) {
     }
   };
 
+  const toggleDiaAbierto = (fechaStr) => {
+    setDiasAbiertos(prev => ({
+      ...prev,
+      [fechaStr]: !prev[fechaStr]
+    }));
+  };
+
   const enviarPropuestaReprogramacion = async (e) => {
     e.preventDefault();
     if (!horarioSeleccionado) {
@@ -285,7 +293,6 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
         </div>
       ) : (
-        /* VISTA DE TARJETAS POR DÍA ESTILO CONFIGURACIÓN DE DISPONIBILIDAD */
         <div style={estilos.cardSeccionAmpliada}>
           <div style={estilos.headerPantallaReprogramacion}>
             <button onClick={() => setCitaSeleccionada(null)} style={estilos.botonVolver}>
@@ -324,36 +331,48 @@ export default function Reprogramaciones({ usuarioId }) {
                 <p style={estilos.textoVacio}>No hay espacios libres en este rango.</p>
               ) : (
                 <div style={estilos.contenedorTarjetasDias}>
-                  {Object.entries(horariosAgrupadosPorDia).map(([fecha, slots]) => (
-                    <div key={fecha} style={estilos.tarjetaDia}>
-                      <div style={estilos.tarjetaDiaHeader}>
-                        <span style={estilos.tarjetaDiaTitulo}>{fecha}</span>
-                        <span style={estilos.tarjetaDiaBadge}>{slots.length} espacios libres</span>
-                      </div>
-                      <div style={estilos.tarjetaDiaBody}>
-                        <div style={estilos.gridSlots}>
-                          {slots.map((h, idx) => {
-                            const seleccionado = horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio;
-                            return (
-                              <div 
-                                key={idx} 
-                                onClick={() => setHorarioSeleccionado(h)}
-                                style={{
-                                  ...estilos.itemSlotHora,
-                                  borderColor: seleccionado ? '#00A89F' : '#CBD5E1',
-                                  backgroundColor: seleccionado ? '#E0F2F1' : '#FFFFFF',
-                                  color: seleccionado ? '#004D40' : '#1E293B',
-                                  fontWeight: seleccionado ? 'bold' : 'normal'
-                                }}
-                              >
-                                {h.label}
-                              </div>
-                            );
-                          })}
+                  {Object.entries(horariosAgrupadosPorDia).map(([fecha, slots]) => {
+                    const estaAbierto = diasAbiertos[fecha];
+                    return (
+                      <div key={fecha} style={estilos.tarjetaDia}>
+                        <div 
+                          onClick={() => toggleDiaAbierto(fecha)}
+                          style={estilos.tarjetaDiaHeader}
+                        >
+                          <span style={estilos.tarjetaDiaTitulo}>{fecha}</span>
+                          <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                            <span style={estilos.tarjetaDiaBadge}>{slots.length} espacios libres</span>
+                            <span style={{fontSize: '0.75rem', color: '#00796B', fontWeight: 'bold'}}>{estaAbierto ? '▲' : '▼'}</span>
+                          </div>
                         </div>
+
+                        {estaAbierto && (
+                          <div style={estilos.tarjetaDiaBody}>
+                            <div style={estilos.gridSlots}>
+                              {slots.map((h, idx) => {
+                                const seleccionado = horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio;
+                                return (
+                                  <div 
+                                    key={idx} 
+                                    onClick={() => setHorarioSeleccionado(h)}
+                                    style={{
+                                      ...estilos.itemSlotHora,
+                                      borderColor: seleccionado ? '#00A89F' : '#CBD5E1',
+                                      backgroundColor: seleccionado ? '#E0F2F1' : '#FFFFFF',
+                                      color: seleccionado ? '#004D40' : '#1E293B',
+                                      fontWeight: seleccionado ? 'bold' : 'normal'
+                                    }}
+                                  >
+                                    {h.label}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -409,13 +428,15 @@ const estilos = {
   input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
   ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
   
-  /* ESTILOS DE TARJETAS IDÉNTICOS A CONFIGURACIÓN DE DISPONIBILIDAD */
+  /* SIN RESTRICCIÓN DE ALTURA: EXPANSIÓN LIBRE HACIA ABAJO */
   contenedorTarjetasDias: { display: 'flex', flexDirection: 'column', gap: '12px' },
   tarjetaDia: { border: '1px solid #00A89F', borderRadius: '8px', backgroundColor: '#FFF', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' },
-  tarjetaDiaHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: '#E0F2F1', borderBottom: '1px solid #00A89F' },
+  tarjetaDiaHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: '#E0F2F1', borderBottom: '1px solid #00A89F', cursor: 'pointer', userSelect: 'none' },
   tarjetaDiaTitulo: { fontSize: '0.85rem', fontWeight: 'bold', color: '#004D40' },
   tarjetaDiaBadge: { fontSize: '0.7rem', color: '#00796B', fontWeight: 'bold', backgroundColor: '#FFF', padding: '2px 6px', borderRadius: '4px', border: '1px solid #B2DFDB' },
-  tarjetaDiaBody: { padding: '12px' },
+  
+  /* SIN MAX-HEIGHT NI OVERFLOW-Y: SE EXPANDE LIBREMENTE */
+  tarjetaDiaBody: { padding: '12px', backgroundColor: '#FFF' },
   
   gridSlots: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' },
   itemSlotHora: { padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.8rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s ease' },

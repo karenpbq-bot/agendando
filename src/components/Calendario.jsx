@@ -80,7 +80,6 @@ export default function Calendario({ usuarioId }) {
         const inicioDate = new Date(`${c.fecha_cita}T${c.hora_inicio}`);
         const finDate = new Date(`${c.fecha_cita}T${c.hora_fin}`);
 
-        // Formato corto de hora (HH:mm)
         const hIniCorto = c.hora_inicio ? c.hora_inicio.substring(0, 5) : '';
         const hFinCorto = c.hora_fin ? c.hora_fin.substring(0, 5) : '';
         const rangoHorario = hIniCorto && hFinCorto ? ` [${hIniCorto} - ${hFinCorto}]` : '';
@@ -377,16 +376,7 @@ export default function Calendario({ usuarioId }) {
         }
       `}</style>
 
-      <div style={estilos.tarjetaHeader}>
-        <div style={estilos.tituloSeccion}>📅 Cronograma de Sesiones y Mentorías</div>
-        <div style={estilos.leyenda}>
-          <span style={estilos.badgeLeyendaGrupal}><b style={{color: '#004D40'}}>■</b> Cita Grupal</span>
-          <span style={estilos.badgeLeyendaIndividual}><b style={{color: '#01579B'}}>■</b> Cita Individual</span>
-          <span style={estilos.badgeLeyendaRestriccion}><b style={{color: '#6C757D'}}>■</b> Bloqueado / Restringido</span>
-        </div>
-        <div style={estilos.instruccion}>💡 <i>Haz clic en cualquier día del mes para gestionarlo en la vista detallada por Hora/Día. Los días bloqueados no permiten agendar.</i></div>
-      </div>
-
+      {/* Contenedor Principal del Calendario sin títulos ni leyendas */}
       <div style={estilos.calendarioWrapper}>
         <Calendar
           localizer={localizer}
@@ -547,17 +537,8 @@ export default function Calendario({ usuarioId }) {
 }
 
 const estilos = {
-  contenedor: { padding: '15px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F4F6F8' },
-  
-  tarjetaHeader: { backgroundColor: '#FFFFFF', padding: '15px 20px', borderRadius: '12px', boxShadow: '0 3px 10px rgba(0,0,0,0.04)', marginBottom: '15px', borderLeft: '5px solid #00A89F' },
-  tituloSeccion: { fontSize: '1.1rem', fontWeight: 'bold', color: '#2C3E50', marginBottom: '8px' },
-  leyenda: { display: 'flex', gap: '12px', fontSize: '0.8rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' },
-  badgeLeyendaGrupal: { backgroundColor: '#E0F2F1', padding: '4px 8px', borderRadius: '6px', color: '#004D40', fontWeight: 'bold' },
-  badgeLeyendaIndividual: { backgroundColor: '#E1F5FE', padding: '4px 8px', borderRadius: '6px', color: '#01579B', fontWeight: 'bold' },
-  badgeLeyendaRestriccion: { backgroundColor: '#F1F3F5', padding: '4px 8px', borderRadius: '6px', color: '#495057', fontWeight: 'bold' },
-  instruccion: { fontSize: '0.75rem', color: '#6C757D' },
-
-  calendarioWrapper: { height: 700, backgroundColor: '#FFFFFF', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', border: '1px solid #E4E7EB' },
+  contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F4F6F8' },
+  calendarioWrapper: { height: 740, backgroundColor: '#FFFFFF', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', border: '1px solid #E4E7EB' },
   
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '25px', borderRadius: '14px', width: '100%', maxWidth: '440px', boxSizing: 'border-box', boxShadow: '0 10px 25px rgba(0,0,0,0.15)' },

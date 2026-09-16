@@ -14,7 +14,8 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [password, setPassword] = useState('');
   const [correo, setCorreo] = useState('');
-  const [codigoInvitacion, setCodigoInvitacion] = useState(''); // Obligatorio solo para Invitados
+  const [codigoInvitacion, setCodigoInvitacion] = useState(''); // Obligatorio para Invitados (7 caracteres)
+  const [codigoAnfitrion, setCodigoAnfitrion] = useState('');     // Obligatorio para Anfitriones (5 dígitos)
   
   const [rubro, setRubro] = useState('');
   const [temasInteres, setTemasInteres] = useState('');
@@ -31,6 +32,18 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     setMensaje('');
 
     try {
+      // Validar código de 5 dígitos para Anfitrión antes de verificar duplicados
+      if (tipoSeleccionado === 'ANFITRION') {
+        const codigoLimpioChair = codigoAnfitrion.trim();
+        if (codigoLimpioChair.length !== 5 || !/^\d{5}$/.test(codigoLimpioChair)) {
+          setMensaje('⚠️ El código de registro de Anfitrión debe ser exactamente de 5 dígitos numéricos.');
+          setCargando(false);
+          return;
+        }
+        // Opcional: Aquí puedes agregar una consulta a Supabase si el código de 5 dígitos requiere validación en BD.
+        // Ejemplo: const { data: validChairCode } = await supabase.from('codigos_chair').select('*').eq('codigo', codigoLimpioChair).single();
+      }
+
       const { data: usuarioExistente, error } = await supabase
         .from('usuarios')
         .select('nombre_completo, rol')
@@ -61,7 +74,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
     }
   };
 
-  // 2. Lógica para registrar un Anfitrión (con plan y cobro)
+  // 2. Lógica para registrar un Anfitrión (con plan, cobro y validación de código de 5 dígitos)
   const procesarRegistroAnfitrion = async () => {
     if (!aceptoTerminos) {
       setMensaje('Debes aceptar las condiciones del servicio y las tarifas vigentes.');
@@ -154,7 +167,7 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
         return;
       }
 
-      // Crear usuario Invitado (Plan gratuito / sin cobro propio)
+      // Crear usuario Invitado
       const { data: nuevoUsuario, error: errorUsuario } = await supabase
         .from('usuarios')
         .insert([
@@ -291,7 +304,24 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             </div>
           </div>
 
-          {/* Si es invitado, mostramos el campo obligatorio de código de 7 caracteres */}
+          {/* Si es Anfitrión, solicitamos el código de 5 dígitos previsto */}
+          {tipoSeleccionado === 'ANFITRION' && (
+            <div style={estilos.grupoInput}>
+              <label style={estilos.etiqueta}>Código de Registro de Anfitrión (5 Dígitos)</label>
+              <input 
+                type="text" 
+                value={codigoAnfitrion}
+                onChange={(e) => setCodigoAnfitrion(e.target.value)}
+                placeholder="Ej. 12345"
+                maxLength={5}
+                style={{ ...estilos.input, fontWeight: 'bold', letterSpacing: '2px', borderColor: '#00A89F' }}
+                required 
+              />
+              <span style={estilos.ayudaInput}>Introduce tu código de autorización de 5 dígitos.</span>
+            </div>
+          )}
+
+          {/* Si es Invitado, mostramos el campo obligatorio de código de 7 caracteres */}
           {tipoSeleccionado === 'INVITADO' && (
             <div style={estilos.grupoInput}>
               <label style={estilos.etiqueta}>Código de Invitación (7 Caracteres)</label>
@@ -343,7 +373,6 @@ export default function Registro({ onVolverLogin, onRegistroExitoso }) {
             />
           </div>
 
-          {/* Campos Opcionales */}
           <div style={estilos.fila}>
             <div style={estilos.grupoInput}>
               <label style={estilos.etiqueta}>Rubro o Sector <span style={estilos.opcional}>(Opcional)</span></label>

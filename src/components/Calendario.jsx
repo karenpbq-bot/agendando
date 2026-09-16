@@ -121,7 +121,6 @@ export default function Calendario({ usuarioId }) {
         });
       }
 
-      // Cargamos tanto empresarios como usuarios generales para asegurar que se listen en el select
       const { data: dataEmpresarios } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol');
@@ -146,11 +145,11 @@ export default function Calendario({ usuarioId }) {
 
       if (dataRest) setRestricciones(dataRest);
 
-      // Cargar citas donde el usuario sea el Chair O el invitado asignado (para que figure en ambos calendarios)
+      // Cargar citas del Chair (excluyendo las canceladas para que liberen horario)
       const { data: dataCitas, error: errCitas } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, telefono, email)')
-        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`);
+        .eq('chair_id', usuarioId);
 
       if (errCitas) {
         console.error('Error cargando citas:', errCitas.message);
@@ -162,6 +161,7 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
+  // Función para determinar si el bloque de 5 min está disponible o bloqueado por citas/restricciones
   const esDisponibleCincoMin = (fecha, minInicioSeg, minFinSeg) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
@@ -176,6 +176,19 @@ export default function Calendario({ usuarioId }) {
       return false; 
     }
 
+    // 1. Revisar si hay una CITA ACTIVA (no cancelada) en este horario
+    const citaActivaEnEsteMinuto = citas.some(c => {
+      if (c.fecha_cita !== fecha || c.estado === 'cancelado') return false;
+      const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
+      const minIniC = hIniC * 60 + (mIniC || 0);
+      const [hFinC, mFinC] = c.hora_fin.split(':').map(Number);
+      const minFinC = hFinC * 60 + (mFinC || 0);
+      return minInicioSeg < minFinC && minFinSeg > minIniC;
+    });
+
+    if (citaActivaEnEsteMinuto) return false; // Bloqueado porque hay cita activa
+
+    // 2. Revisar restricciones del Chair
     const restriccionDia = restricciones.find(r => {
       if (!r.fecha_especifica) return false;
       return r.fecha_especifica.substring(0, 10) === fecha;
@@ -251,7 +264,7 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // 1. Guardar Cita (Operación limpia y segura en Supabase)
+  // 1. Guardar Cita
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
@@ -309,7 +322,7 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // 2. Enviar por WhatsApp de manera independiente
+  // 2. Enviar por WhatsApp
   const enviarPorWhatsApp = () => {
     const empresObj = empresarios.find(e => e.id == empresarioId);
     if (!empresObj || !empresObj.telefono) {
@@ -320,7 +333,7 @@ export default function Calendario({ usuarioId }) {
     window.open(`https://wa.me/${empresObj.telefono.replace(/\+/g, '')}?text=${textoWs}`, '_blank');
   };
 
-  // 3. Enviar por Correo de manera independiente
+  // 3. Enviar por Correo
   const enviarPorCorreo = () => {
     const empresObj = empresarios.find(e => e.id == empresarioId);
     if (!empresObj || !empresObj.email) {
@@ -378,22 +391,22 @@ export default function Calendario({ usuarioId }) {
 
       <div style={estilos.leyenda}>
         <span><b style={{color: '#B8860B'}}>■</b> Disponible</span>
-        <span><b style={{color: '#E65100'}}>■</b> Reservado</span>
-        <span><b style={{color: '#00796B'}}>■</b> Confirmado</span>
-        <span><b style={{color: '#D32F2F'}}>■</b> Cancelado</span>
+        <span><b style={{color: '#00796B'}}>■</b> Cita Grupal (Verde)</span>
+        <span><b style={{color: '#0288D1'}}>■</b> Cita Individual (Celeste)</span>
+        <span><b style={{color: '#D32F2F'}}>■</b> Cancelado / Bloqueado</span>
       </div>
 
       <div style={estilos.gridCalendarioContainer}>
-        <div style={{ ...estilos.gridHeaderRow, gridTemplateColumns: `70px repeat(${diasSemanaMes.length}, ${estilosEscala.minWidth})` }}>
-          <div style={estilos.headerEsquina}>Hora</div>
-          {diasSemanaMes.map(d => (
-            <div key={d.fecha} style={estilos.headerDia}>
-              {d.nombreDia.slice(0, 3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span>
-            </div>
-          ))}
-        </div>
-
         <div style={estilos.gridBodyScroll}>
+          <div style={{ ...estilos.gridHeaderRow, gridTemplateColumns: `70px repeat(${diasSemanaMes.length}, ${estilosEscala.minWidth})` }}>
+            <div style={estilos.headerEsquina}>Hora</div>
+            {diasSemanaMes.map(d => (
+              <div key={d.fecha} style={estilos.headerDia}>
+                {d.nombreDia.slice(0, 3)} <br/><span style={estilos.numDia}>{d.diaNumero}</span>
+              </div>
+            ))}
+          </div>
+
           {horasDelDia.map((horaBase, indexH) => {
             const minBase = indexH * 60;
 
@@ -411,7 +424,7 @@ export default function Calendario({ usuarioId }) {
                         const mStr = String(mOffset).padStart(2, '0');
                         const horaMinutoStr = `${hStr}:${mStr}`;
 
-                        const disponible = esDisponibleCincoMin(d.fecha, minInicioSeg, minFinSeg);
+                        // Buscar cita existente en este segmento de 5 minutos
                         const citaEncontrada = citas.find(c => {
                           if (c.fecha_cita !== d.fecha) return false;
                           const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
@@ -421,13 +434,26 @@ export default function Calendario({ usuarioId }) {
                           return minInicioSeg < minFinC && minFinSeg > minIniC;
                         });
 
+                        const disponible = esDisponibleCincoMin(d.fecha, minInicioSeg, minFinSeg);
+
                         let estiloSubSegmento = { ...estilos.subSegmentoPlano };
-                        if (citaEncontrada) {
-                          if (citaEncontrada.estado === 'reservado') estiloSubSegmento.backgroundColor = '#FFE0B2';
-                          else if (citaEncontrada.estado === 'confirmado') estiloSubSegmento.backgroundColor = '#D1F0EE';
-                          else if (citaEncontrada.estado === 'cancelado') estiloSubSegmento.backgroundColor = '#FFCDD2';
+                        let etiquetaTexto = '';
+
+                        if (citaEncontrada && citaEncontrada.estado !== 'cancelado') {
+                          // Si es grupal -> Verde (#C8E6C9), si es individual -> Celeste (#B3E5FC)
+                          if (citaEncontrada.tipo_sesion === 'Grupal') {
+                            estiloSubSegmento.backgroundColor = '#C8E6C9';
+                            if (mOffset === 0) etiquetaTexto = `👥 ${citaEncontrada.nombre_grupo || 'Grupal'}`;
+                          } else {
+                            estiloSubSegmento.backgroundColor = '#B3E5FC';
+                            if (mOffset === 0) {
+                              const nombreEmp = citaEncontrada.usuarios?.nombre_completo?.split(' ')[0] || 'Individual';
+                              etiquetaTexto = `👤 ${nombreEmp}`;
+                            }
+                          }
+                          estiloSubSegmento.cursor = 'pointer';
                         } else if (disponible) {
-                          estiloSubSegmento.backgroundColor = 'rgba(255, 235, 59, 0.3)';
+                          estiloSubSegmento.backgroundColor = 'rgba(255, 235, 59, 0.25)';
                           estiloSubSegmento.cursor = 'pointer';
                         } else {
                           estiloSubSegmento.backgroundColor = '#EAEAEA';
@@ -439,13 +465,13 @@ export default function Calendario({ usuarioId }) {
                             key={mOffset}
                             style={estiloSubSegmento}
                             onClick={() => abrirModalParaMinuto(d, horaMinutoStr, citaEncontrada)}
-                            title={horaMinutoStr}
+                            title={`${horaMinutoStr} ${etiquetaTexto}`}
                           >
-                            {citaEncontrada && mOffset === 0 ? (
+                            {etiquetaTexto && (
                               <span style={estilos.textoCita}>
-                                {citaEncontrada.estado.toUpperCase().substring(0, 3)}
+                                {etiquetaTexto}
                               </span>
-                            ) : null}
+                            )}
                           </div>
                         );
                       })}
@@ -471,9 +497,9 @@ export default function Calendario({ usuarioId }) {
                   onChange={(e) => setEstadoCita(e.target.value)}
                   style={{...estilos.input, fontWeight: 'bold'}}
                 >
+                  <option value="confirmado">Confirmado / Activo</option>
                   <option value="reservado">Reservado</option>
-                  <option value="confirmado">Confirmado</option>
-                  <option value="cancelado">Cancelado</option>
+                  <option value="cancelado">Cancelado (Libera Horario)</option>
                 </select>
               </div>
 
@@ -484,8 +510,8 @@ export default function Calendario({ usuarioId }) {
                   onChange={(e) => setTipoSession(e.target.value)}
                   style={estilos.input}
                 >
-                  <option value="Individual">Individual</option>
-                  <option value="Grupal">Grupal</option>
+                  <option value="Individual">Individual (Celeste)</option>
+                  <option value="Grupal">Grupal (Verde)</option>
                 </select>
               </div>
 
@@ -570,14 +596,14 @@ export default function Calendario({ usuarioId }) {
               {/* Los 3 Botones Independientes */}
               <div style={estilos.contenedorBotonesAccion}>
                 <button type="submit" style={estilos.botonGuardarPrincipal}>
-                  💾 Guardar Cita
+                  💾 Guardar / Actualizar Cita
                 </button>
                 <div style={estilos.filaAccionesSecundarias}>
                   <button type="button" onClick={enviarPorWhatsApp} style={estilos.botonWs}>
-                    💬 Enviar WhatsApp
+                    💬 WhatsApp
                   </button>
                   <button type="button" onClick={enviarPorCorreo} style={estilos.botonCorreo}>
-                    ✉️ Enviar Correo
+                    ✉️ Correo
                   </button>
                 </div>
                 <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrarModal}>
@@ -602,22 +628,24 @@ const estilos = {
   btnZoom: { padding: '5px 8px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
   mensajeFeedback: { fontSize: '0.75rem', color: '#00796B', backgroundColor: '#E0F2F1', padding: '6px', borderRadius: '4px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold' },
-  leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' },
+  leyenda: { display: 'flex', justifyContent: 'center', gap: '10px', fontSize: '0.65rem', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' },
   
-  gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #EAEAEA' },
-  gridHeaderRow: { display: 'grid', backgroundColor: '#00A89F', color: '#FFF', position: 'sticky', top: 0, zIndex: 3 },
-  headerEsquina: { padding: '6px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 4, borderRight: '1px solid rgba(255,255,255,0.2)' },
-  headerDia: { padding: '6px 4px', textAlign: 'center', fontSize: '0.7rem' },
+  // Contenedor con Scroll Profesional y Sticky Headers (Vertical y Horizontal)
+  gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
+  gridBodyScroll: { maxHeight: '620px', overflowY: 'auto', overflowX: 'auto', position: 'relative' },
+  
+  gridHeaderRow: { display: 'grid', backgroundColor: '#00A89F', color: '#FFF', position: 'sticky', top: 0, zIndex: 10 },
+  headerEsquina: { padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 11, borderRight: '1px solid rgba(255,255,255,0.2)' },
+  headerDia: { padding: '8px 4px', textAlign: 'center', fontSize: '0.7rem' },
   numDia: { fontWeight: 'bold' },
   
-  gridBodyScroll: { maxHeight: '620px', overflowY: 'auto', overflowX: 'auto' },
   gridRow: { display: 'grid', borderBottom: '1px solid #EEE' },
-  colHoraFija: { padding: '4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 2, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  colHoraFija: { padding: '4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 5, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   
   celdaContenedorPlana: { height: '48px', borderRight: '1px solid #EEE', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
-  subSegmentoPlano: { flex: 1, width: '100%', boxSizing: 'border-box', borderBottom: '0.5px solid rgba(0,0,0,0.02)' },
+  subSegmentoPlano: { flex: 1, width: '100%', boxSizing: 'border-box', borderBottom: '0.5px solid rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' },
 
-  textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.45rem', paddingLeft: '1px', position: 'absolute' },
+  textoCita: { color: '#004D40', fontWeight: 'bold', fontSize: '0.55rem', paddingLeft: '2px', position: 'absolute', top: '2px', left: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '95%' },
 
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '420px', boxSizing: 'border-box' },

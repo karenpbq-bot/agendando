@@ -207,14 +207,14 @@ export default function Reprogramaciones({ usuarioId }) {
     }));
   };
 
+  // Al hacer clic en un slot libre, abre INMEDIATAMENTE el modal
   const abrirModalSlot = (slot) => {
     setSlotElegido(slot);
-    setMantenerLinkAnterior(false); // Inicia apagado (No)
-    setLinkZoom(''); // Campo limpio para obligar a ingresar uno nuevo salvo que active el switch
+    setMantenerLinkAnterior(false); // Switch apagado por defecto
+    setLinkZoom(''); // Limpio para exigir el nuevo link salvo que prendan el switch
     setModalAbierto(true);
   };
 
-  // Manejo del switch para alternar el uso del link anterior
   const handleSwitchChange = (e) => {
     const activo = e.target.checked;
     setMantenerLinkAnterior(activo);
@@ -315,7 +315,7 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
 
           <p style={estilos.infoSeleccion}>
-            Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>. Haz clic en un horario disponible para abrir la confirmación.
+            Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>. Haz clic directamente en un horario disponible para abrir el formulario de confirmación.
           </p>
 
           <div style={estilos.filaBotonesRango}>
@@ -366,7 +366,7 @@ export default function Reprogramaciones({ usuarioId }) {
                                 key={idx} 
                                 onClick={() => abrirModalSlot(h)}
                                 style={estilos.itemSlotHora}
-                                title="Haz clic para seleccionar esta fecha y hora"
+                                title="Haz clic para abrir la ventana de confirmación"
                               >
                                 {h.label}
                               </div>
@@ -383,7 +383,7 @@ export default function Reprogramaciones({ usuarioId }) {
         </div>
       )}
 
-      {/* Ventana Emergente (Modal) con Switch de Enlace */}
+      {/* Ventana Emergente (Modal) Directa */}
       {modalAbierto && slotElegido && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -398,7 +398,7 @@ export default function Reprogramaciones({ usuarioId }) {
                 <p style={estilos.textoInvitadoModal}><b>{citaSeleccionada?.usuarios?.nombre_completo || 'Invitado'}</b></p>
               </div>
 
-              {/* Switch de Reutilización de Link Anterior */}
+              {/* Switch de Reutilización de Link */}
               <div style={estilos.contenedorSwitch}>
                 <label style={estilos.labelSwitch}>
                   <span>¿Mantener el link de reunión anterior?</span>

@@ -121,10 +121,10 @@ export default function Calendario({ usuarioId }) {
         });
       }
 
+      // Cargamos tanto empresarios como usuarios generales para asegurar que se listen en el select
       const { data: dataEmpresarios } = await supabase
         .from('usuarios')
-        .select('id, nombre_completo, telefono, email, rol')
-        .eq('rol', 'Empresario');
+        .select('id, nombre_completo, telefono, email, rol');
       if (dataEmpresarios) setEmpresarios(dataEmpresarios);
 
       const [anio, mes] = mesSeleccionado.split('-').map(Number);
@@ -146,11 +146,11 @@ export default function Calendario({ usuarioId }) {
 
       if (dataRest) setRestricciones(dataRest);
 
-      // Cargar citas del Chair asegurando compatibilidad
+      // Cargar citas donde el usuario sea el Chair O el invitado asignado (para que figure en ambos calendarios)
       const { data: dataCitas, error: errCitas } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, telefono, email)')
-        .eq('chair_id', usuarioId);
+        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`);
 
       if (errCitas) {
         console.error('Error cargando citas:', errCitas.message);
@@ -210,6 +210,7 @@ export default function Calendario({ usuarioId }) {
 
   const abrirModalParaMinuto = (dia, horaStr, citaEncontrada = null) => {
     setDiaSeleccionado(dia);
+    setMensaje('');
     
     if (citaEncontrada) {
       setCitaExistenteId(citaEncontrada.id);
@@ -250,14 +251,12 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
+  // 1. Guardar Cita (Operación limpia y segura en Supabase)
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
 
     try {
-      const empresObj = empresarios.find(e => e.id == empresarioId);
-      const telefonoDestino = empresObj ? empresObj.telefono : '';
-
       if (citaExistenteId) {
         const { error } = await supabase.from('agd_citas')
           .update({
@@ -272,7 +271,7 @@ export default function Calendario({ usuarioId }) {
           .eq('id', citaExistenteId);
 
         if (error) throw error;
-        setMensaje('¡Cita actualizada correctamente!');
+        setMensaje('¡Cita actualizada correctamente en el cronograma!');
       } else {
         const fechasAGuardar = [diaSeleccionado.fecha];
         
@@ -299,20 +298,38 @@ export default function Calendario({ usuarioId }) {
 
         const { error } = await supabase.from('agd_citas').insert(payloads);
         if (error) throw error;
-        setMensaje('¡Sesión(es) agendada(s) correctamente!');
+        setMensaje('¡Sesión(es) guardada(s) y reflejadas en el cronograma!');
       }
 
-      setModalAbierto(false);
       await cargarDatosSupabase();
-      
-      if (telefonoDestino && estadoCita !== 'cancelado') {
-        const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado en estado *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom}.`);
-        window.open(`https://wa.me/${telefonoDestino}?text=${textoWs}`, '_blank');
-      }
+      setTimeout(() => setModalAbierto(false), 1200);
 
     } catch (err) {
-      setMensaje('Error en el proceso: ' + err.message);
+      setMensaje('Error al guardar: ' + err.message);
     }
+  };
+
+  // 2. Enviar por WhatsApp de manera independiente
+  const enviarPorWhatsApp = () => {
+    const empresObj = empresarios.find(e => e.id == empresarioId);
+    if (!empresObj || !empresObj.telefono) {
+      setMensaje('El invitado seleccionado no cuenta con un número de teléfono registrado.');
+      return;
+    }
+    const textoWs = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado programada para el ${diaSeleccionado?.fecha} de ${horaInicio} a ${horaFin}. Estado: *${estadoCita.toUpperCase()}*. Link de Zoom: ${linkZoom || 'Pendiente'}`);
+    window.open(`https://wa.me/${empresObj.telefono.replace(/\+/g, '')}?text=${textoWs}`, '_blank');
+  };
+
+  // 3. Enviar por Correo de manera independiente
+  const enviarPorCorreo = () => {
+    const empresObj = empresarios.find(e => e.id == empresarioId);
+    if (!empresObj || !empresObj.email) {
+      setMensaje('El invitado seleccionado no cuenta con un correo electrónico registrado.');
+      return;
+    }
+    const asunto = encodeURIComponent('Convocatoria a Sesión / Cita en Agendando');
+    const cuerpo = encodeURIComponent(`Hola ${empresObj.nombre_completo},\n\nTe informamos que tu sesión ha sido agendada para el día ${diaSeleccionado?.fecha} en el horario de ${horaInicio} a ${horaFin}.\nEstado: ${estadoCita.toUpperCase()}\nLink de acceso: ${linkZoom || 'Pendiente'}\n\nAtentamente,\nPlataforma Agendando`);
+    window.open(`mailto:${empresObj.email}?subject=${asunto}&body=${cuerpo}`);
   };
 
   const estilosEscala = {
@@ -474,7 +491,7 @@ export default function Calendario({ usuarioId }) {
 
               {tipoSession === 'Individual' ? (
                 <div style={estilos.grupoInput}>
-                  <label style={estilos.label}>Seleccionar Empresario</label>
+                  <label style={estilos.label}>Seleccionar Invitado / Empresario</label>
                   <select 
                     value={empresarioId} 
                     onChange={(e) => seleccionarEmpresario(e.target.value)}
@@ -483,7 +500,7 @@ export default function Calendario({ usuarioId }) {
                   >
                     <option value="">Seleccione...</option>
                     {empresarios.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.nombre_completo}</option>
+                      <option key={emp.id} value={emp.id}>{emp.nombre_completo} ({emp.rol})</option>
                     ))}
                   </select>
                 </div>
@@ -525,7 +542,7 @@ export default function Calendario({ usuarioId }) {
               </div>
 
               <div style={estilos.grupoInput}>
-                <label style={estilos.label}>Link de Reunión (Zoom Recurrente)</label>
+                <label style={estilos.label}>Link de Reunión (Zoom / Meet)</label>
                 <input 
                   type="url" 
                   value={linkZoom} 
@@ -548,9 +565,24 @@ export default function Calendario({ usuarioId }) {
                 </div>
               )}
 
-              <div style={estilos.modalBotones}>
-                <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrar}>Cancelar</button>
-                <button type="submit" style={estilos.botonGuardar}>Guardar y Enviar WhatsApp</button>
+              {mensaje && <p style={estilos.mensajeFeedback}>{mensaje}</p>}
+
+              {/* Los 3 Botones Independientes */}
+              <div style={estilos.contenedorBotonesAccion}>
+                <button type="submit" style={estilos.botonGuardarPrincipal}>
+                  💾 Guardar Cita
+                </button>
+                <div style={estilos.filaAccionesSecundarias}>
+                  <button type="button" onClick={enviarPorWhatsApp} style={estilos.botonWs}>
+                    💬 Enviar WhatsApp
+                  </button>
+                  <button type="button" onClick={enviarPorCorreo} style={estilos.botonCorreo}>
+                    ✉️ Enviar Correo
+                  </button>
+                </div>
+                <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrarModal}>
+                  Cerrar Ventana
+                </button>
               </div>
             </form>
           </div>
@@ -569,6 +601,7 @@ const estilos = {
   zoomContainer: { display: 'flex', gap: '4px' },
   btnZoom: { padding: '5px 8px', borderRadius: '6px', border: 'none', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   mensajeGeneral: { fontSize: '0.8rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '5px 0' },
+  mensajeFeedback: { fontSize: '0.75rem', color: '#00796B', backgroundColor: '#E0F2F1', padding: '6px', borderRadius: '4px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '8px', fontSize: '0.65rem', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' },
   
   gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #EAEAEA' },
@@ -587,16 +620,20 @@ const estilos = {
   textoCita: { color: '#333', fontWeight: 'bold', fontSize: '0.45rem', paddingLeft: '1px', position: 'absolute' },
 
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
-  modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '400px', boxSizing: 'border-box' },
-  modalTitulo: { fontSize: '1rem', color: '#333', marginBottom: '15px', textAlign: 'center' },
-  formularioModal: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  grupoInput: { display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' },
-  label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
-  input: { padding: '8px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' },
+  modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '420px', boxSizing: 'border-box' },
+  modalTitulo: { fontSize: '0.95rem', color: '#333', marginBottom: '12px', textAlign: 'center' },
+  formularioModal: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  grupoInput: { display: 'flex', flexDirection: 'column', gap: '3px', textAlign: 'left' },
+  label: { fontSize: '0.7rem', fontWeight: 'bold', color: '#444' },
+  input: { padding: '7px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' },
   filaHorarios: { display: 'flex', gap: '8px' },
-  grupoCheckbox: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px' },
-  labelCheck: { fontSize: '0.75rem', color: '#333', cursor: 'pointer' },
-  modalBotones: { display: 'flex', gap: '10px', marginTop: '15px' },
-  botonCerrar: { flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #CCC', background: '#FFF', color: '#666', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
-  botonGuardar: { flex: 2, padding: '10px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }
+  grupoCheckbox: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' },
+  labelCheck: { fontSize: '0.7rem', color: '#333', cursor: 'pointer' },
+  
+  contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' },
+  botonGuardarPrincipal: { width: '100%', padding: '10px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
+  filaAccionesSecundarias: { display: 'flex', gap: '6px' },
+  botonWs: { flex: 1, padding: '8px', borderRadius: '6px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  botonCorreo: { flex: 1, padding: '8px', borderRadius: '6px', border: 'none', background: '#0288D1', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  botonCerrarModal: { width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #CCC', background: '#FFF', color: '#666', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '2px' }
 };

@@ -187,7 +187,7 @@ export default function Reprogramaciones({ usuarioId }) {
     setCitaSeleccionada(cita);
     setMensaje('');
     setHorarioSeleccionado(null);
-    setLinkZoom(cita.link_zoom || '');
+    setLinkZoom(cita.link_zoom || ''); // Precarga el link actual de la cita original
     await calcularEspaciosLibres(dias, cita);
   };
 
@@ -231,7 +231,7 @@ export default function Reprogramaciones({ usuarioId }) {
 
       if (error) throw error;
 
-      setMensaje('¡Propuesta enviada! Cita registrada con estado Reservado a la espera de confirmación.');
+      setMensaje('¡Propuesta enviada! Cita reprogramada con éxito (Reservado).');
 
       setCitaSeleccionada(null);
       setHorariosAgrupadosPorDia({});
@@ -371,7 +371,7 @@ export default function Reprogramaciones({ usuarioId }) {
             </div>
 
             <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Link de Reunión (Zoom / Meet) - <i>Opcional</i></label>
+              <label style={estilos.label}>Link de Reunión (Zoom / Meet) para la nueva cita:</label>
               <input 
                 type="url" 
                 value={linkZoom}
@@ -379,11 +379,11 @@ export default function Reprogramaciones({ usuarioId }) {
                 placeholder="https://zoom.us/j/..."
                 style={estilos.input}
               />
-              <span style={estilos.ayudaInput}>Si no se llena este campo, la cita quedará en "Reprogramaciones en curso".</span>
+              <span style={estilos.ayudaInput}>Se ha precargado el enlace anterior. Modifícalo si requieres uno nuevo para esta reprogramación.</span>
             </div>
 
             <button type="submit" disabled={cargando || !horarioSeleccionado} style={estilos.botonPrimario}>
-              {cargando ? 'Procesando...' : 'Solicitar Confirmación'}
+              {cargando ? 'Procesando...' : 'Confirmar Reprogramación'}
             </button>
           </form>
         </div>

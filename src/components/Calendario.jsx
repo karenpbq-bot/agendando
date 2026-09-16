@@ -83,14 +83,17 @@ export default function Calendario({ usuarioId }) {
         const hIniCorto = c.hora_inicio ? c.hora_inicio.substring(0, 5) : '';
         const hFinCorto = c.hora_fin ? c.hora_fin.substring(0, 5) : '';
         const rangoHorario = hIniCorto && hFinCorto ? ` [${hIniCorto} - ${hFinCorto}]` : '';
+        
+        // Indicador de estado visible en la vista Agenda y Mes/Semana/Día
+        const estadoEtiqueta = c.estado ? ` (${c.estado.toUpperCase()})` : '';
 
         let tituloLabel = 'Cita';
         if (c.tipo_sesion === 'Grupal') {
-          tituloLabel = `👥 ${c.nombre_grupo || 'Grupal'}${rangoHorario}`;
+          tituloLabel = `👥 ${c.nombre_grupo || 'Grupal'}${rangoHorario}${estadoEtiqueta}`;
         } else {
           const emp = empresarios.find(e => e.id === Number(c.empresario_id || c.invitado_id));
           const nombreEmp = emp?.nombre_completo?.split(' ')[0] || 'Individual';
-          tituloLabel = `👤 ${nombreEmp}${rangoHorario}`;
+          tituloLabel = `👤 ${nombreEmp}${rangoHorario}${estadoEtiqueta}`;
         }
 
         return {
@@ -376,7 +379,7 @@ export default function Calendario({ usuarioId }) {
         }
       `}</style>
 
-      {/* Contenedor Principal del Calendario sin títulos ni leyendas */}
+      {/* Contenedor Principal del Calendario (Leyenda y títulos eliminados) */}
       <div style={estilos.calendarioWrapper}>
         <Calendar
           localizer={localizer}
@@ -396,6 +399,7 @@ export default function Calendario({ usuarioId }) {
           dayPropGetter={dayPropGetter}
           min={new Date(1970, 0, 1, 0, 0, 0)}
           max={new Date(1970, 0, 1, 23, 59, 59)}
+          scrollToTime={new Date(1970, 0, 1, 8, 0, 0)}
           messages={{
             next: 'Siguiente ❯',
             previous: '❮ Anterior',

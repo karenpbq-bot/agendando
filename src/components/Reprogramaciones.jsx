@@ -11,9 +11,13 @@ export default function Reprogramaciones({ usuarioId }) {
   const [rangoDias, setRangoDias] = useState(7);
   const [horariosAgrupadosPorDia, setHorariosAgrupadosPorDia] = useState({});
   const [diasAbiertos, setDiasAbiertos] = useState({});
-  const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
 
+  // Estados para el Modal y el Switch de reutilización de link
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [slotElegido, setSlotElegido] = useState(null);
   const [linkZoom, setLinkZoom] = useState('');
+  const [mantenerLinkAnterior, setMantenerLinkAnterior] = useState(false);
+  
   const [mensaje, setMensaje] = useState('');
   const [cargando, setCargando] = useState(false);
 
@@ -186,8 +190,6 @@ export default function Reprogramaciones({ usuarioId }) {
   const seleccionarParaReprogramar = async (cita, dias = rangoDias) => {
     setCitaSeleccionada(cita);
     setMensaje('');
-    setHorarioSeleccionado(null);
-    setLinkZoom(cita.link_zoom || ''); // Precarga el link actual de la cita original
     await calcularEspaciosLibres(dias, cita);
   };
 
@@ -205,14 +207,30 @@ export default function Reprogramaciones({ usuarioId }) {
     }));
   };
 
-  const enviarPropuestaReprogramacion = async (e) => {
-    e.preventDefault();
-    if (!horarioSeleccionado) {
-      setMensaje('Debes seleccionar un horario de la lista.');
-      return;
+  const abrirModalSlot = (slot) => {
+    setSlotElegido(slot);
+    setMantenerLinkAnterior(false); // Inicia apagado (No)
+    setLinkZoom(''); // Campo limpio para obligar a ingresar uno nuevo salvo que active el switch
+    setModalAbierto(true);
+  };
+
+  // Manejo del switch para alternar el uso del link anterior
+  const handleSwitchChange = (e) => {
+    const activo = e.target.checked;
+    setMantenerLinkAnterior(activo);
+    if (activo) {
+      setLinkZoom(citaSeleccionada?.link_zoom || '');
+    } else {
+      setLinkZoom('');
     }
+  };
+
+  const confirmarReprogramacionFinal = async (e) => {
+    e.preventDefault();
+    if (!slotElegido || !citaSeleccionada) return;
+
     if (!linkZoom || linkZoom.trim() === '') {
-      setMensaje('Debes verificar o ingresar el enlace de la reunión (Zoom / Meet).');
+      alert('Debes ingresar el enlace de la reunión (Zoom / Meet).');
       return;
     }
 
@@ -223,18 +241,18 @@ export default function Reprogramaciones({ usuarioId }) {
       const { error } = await supabase
         .from('agd_citas')
         .update({
-          fecha_cita: horarioSeleccionado.fecha,
-          hora_inicio: horarioSeleccionado.horaInicio,
-          hora_fin: horarioSeleccionado.horaFin,
+          fecha_cita: slotElegido.fecha,
+          hora_inicio: slotElegido.horaInicio,
+          hora_fin: slotElegido.horaFin,
           link_zoom: linkZoom.trim(),
-          estado: 'reservado' // Nace como reservado en espera de confirmación
+          estado: 'reservado'
         })
         .eq('id', citaSeleccionada.id);
 
       if (error) throw error;
 
       setMensaje('¡Cita reprogramada con éxito (Reservado)!');
-
+      setModalAbierto(false);
       setCitaSeleccionada(null);
       setHorariosAgrupadosPorDia({});
       cargarDatosIniciales();
@@ -296,99 +314,137 @@ export default function Reprogramaciones({ usuarioId }) {
             <h3 style={{...estilos.subSubTitulo, margin: 0, border: 'none'}}>Seleccionar Nuevo Horario</h3>
           </div>
 
-          <form onSubmit={enviarPropuestaReprogramacion} style={estilos.formulario}>
-            <p style={estilos.infoSeleccion}>
-              Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>
-            </p>
+          <p style={estilos.infoSeleccion}>
+            Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>. Haz clic en un horario disponible para abrir la confirmación.
+          </p>
 
-            <div style={estilos.filaBotonesRango}>
-              <button 
-                type="button" 
-                onClick={() => cambiarRangoDias(7)}
-                style={rangoDias === 7 ? estilos.btnRangoActivo : estilos.btnRangoInactivo}
-              >
-                Próximos 7 Días
-              </button>
-              <button 
-                type="button" 
-                onClick={() => cambiarRangoDias(30)}
-                style={rangoDias === 30 ? estilos.btnRangoActivo : estilos.btnRangoInactivo}
-              >
-                Próximos 30 Días
-              </button>
-            </div>
+          <div style={estilos.filaBotonesRango}>
+            <button 
+              type="button" 
+              onClick={() => cambiarRangoDias(7)}
+              style={rangoDias === 7 ? estilos.btnRangoActivo : estilos.btnRangoInactivo}
+            >
+              Próximos 7 Días
+            </button>
+            <button 
+              type="button" 
+              onClick={() => cambiarRangoDias(30)}
+              style={rangoDias === 30 ? estilos.btnRangoActivo : estilos.btnRangoInactivo}
+            >
+              Próximos 30 Días
+            </button>
+          </div>
 
-            <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Disponibilidad y Horarios Libres:</label>
-              {cargando ? (
-                <p style={estilos.textoVacio}>Buscando espacios libres...</p>
-              ) : Object.keys(horariosAgrupadosPorDia).length === 0 ? (
-                <p style={estilos.textoVacio}>No hay espacios libres en este rango.</p>
-              ) : (
-                <div style={estilos.contenedorTarjetasDias}>
-                  {Object.entries(horariosAgrupadosPorDia).map(([fecha, slots]) => {
-                    const estaAbierto = diasAbiertos[fecha];
-                    return (
-                      <div key={fecha} style={estilos.tarjetaDia}>
-                        <div 
-                          onClick={() => toggleDiaAbierto(fecha)}
-                          style={estilos.tarjetaDiaHeader}
-                        >
-                          <span style={estilos.tarjetaDiaTitulo}>{fecha}</span>
-                          <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
-                            <span style={estilos.tarjetaDiaBadge}>{slots.length} espacios libres</span>
-                            <span style={{fontSize: '0.75rem', color: '#00796B', fontWeight: 'bold'}}>{estaAbierto ? '▲' : '▼'}</span>
+          <div style={estilos.grupoInput}>
+            <label style={estilos.label}>Disponibilidad y Horarios Libres:</label>
+            {cargando ? (
+              <p style={estilos.textoVacio}>Buscando espacios libres...</p>
+            ) : Object.keys(horariosAgrupadosPorDia).length === 0 ? (
+              <p style={estilos.textoVacio}>No hay espacios libres en este rango.</p>
+            ) : (
+              <div style={estilos.contenedorTarjetasDias}>
+                {Object.entries(horariosAgrupadosPorDia).map(([fecha, slots]) => {
+                  const estaAbierto = diasAbiertos[fecha];
+                  return (
+                    <div key={fecha} style={estilos.tarjetaDia}>
+                      <div 
+                        onClick={() => toggleDiaAbierto(fecha)}
+                        style={estilos.tarjetaDiaHeader}
+                      >
+                        <span style={estilos.tarjetaDiaTitulo}>{fecha}</span>
+                        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                          <span style={estilos.tarjetaDiaBadge}>{slots.length} espacios libres</span>
+                          <span style={{fontSize: '0.75rem', color: '#00796B', fontWeight: 'bold'}}>{estaAbierto ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+
+                      {estaAbierto && (
+                        <div style={estilos.tarjetaDiaBody}>
+                          <div style={estilos.gridSlots}>
+                            {slots.map((h, idx) => (
+                              <div 
+                                key={idx} 
+                                onClick={() => abrirModalSlot(h)}
+                                style={estilos.itemSlotHora}
+                                title="Haz clic para seleccionar esta fecha y hora"
+                              >
+                                {h.label}
+                              </div>
+                            ))}
                           </div>
                         </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-                        {estaAbierto && (
-                          <div style={estilos.tarjetaDiaBody}>
-                            <div style={estilos.gridSlots}>
-                              {slots.map((h, idx) => {
-                                const seleccionado = horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio;
-                                return (
-                                  <div 
-                                    key={idx} 
-                                    onClick={() => setHorarioSeleccionado(h)}
-                                    style={{
-                                      ...estilos.itemSlotHora,
-                                      borderColor: seleccionado ? '#00A89F' : '#CBD5E1',
-                                      backgroundColor: seleccionado ? '#E0F2F1' : '#FFFFFF',
-                                      color: seleccionado ? '#004D40' : '#1E293B',
-                                      fontWeight: seleccionado ? 'bold' : 'normal'
-                                    }}
-                                  >
-                                    {h.label}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+      {/* Ventana Emergente (Modal) con Switch de Enlace */}
+      {modalAbierto && slotElegido && (
+        <div style={estilos.modalOverlay}>
+          <div style={estilos.modalContenido}>
+            <div style={estilos.modalHeaderDecorado}>
+              <h3 style={estilos.modalTitulo}>✨ Confirmar Reprogramación</h3>
+              <span style={estilos.modalSubFecha}>{slotElegido.fecha} | {slotElegido.label}</span>
             </div>
 
-            <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Link de Reunión (Zoom / Meet) para la nueva cita: <span style={{color: '#DC2626'}}>*</span></label>
-              <input 
-                type="url" 
-                value={linkZoom}
-                onChange={(e) => setLinkZoom(e.target.value)}
-                placeholder="https://zoom.us/j/..."
-                style={estilos.input}
-                required
-              />
-              <span style={estilos.ayudaInput}>Se ha precargado el enlace anterior. Revísalo o cámbialo antes de confirmar la reprogramación.</span>
-            </div>
+            <form onSubmit={confirmarReprogramacionFinal} style={estilos.formularioModal}>
+              <div style={estilos.grupoInputModal}>
+                <label style={estilos.labelModal}>Invitado:</label>
+                <p style={estilos.textoInvitadoModal}><b>{citaSeleccionada?.usuarios?.nombre_completo || 'Invitado'}</b></p>
+              </div>
 
-            <button type="submit" disabled={cargando || !horarioSeleccionado} style={estilos.botonPrimario}>
-              {cargando ? 'Procesando...' : 'Confirmar Reprogramación'}
-            </button>
-          </form>
+              {/* Switch de Reutilización de Link Anterior */}
+              <div style={estilos.contenedorSwitch}>
+                <label style={estilos.labelSwitch}>
+                  <span>¿Mantener el link de reunión anterior?</span>
+                  <input 
+                    type="checkbox" 
+                    checked={mantenerLinkAnterior}
+                    onChange={handleSwitchChange}
+                    style={estilos.checkboxSwitch}
+                  />
+                </label>
+                {citaSeleccionada?.link_zoom && (
+                  <span style={estilos.textoAnteriorLink}>Link anterior: {citaSeleccionada.link_zoom}</span>
+                )}
+              </div>
+
+              <div style={estilos.grupoInputModal}>
+                <label style={estilos.labelModal}>
+                  Link de Reunión (Zoom / Meet): <span style={{color: '#DC2626'}}>*</span>
+                </label>
+                <input 
+                  type="url" 
+                  value={linkZoom}
+                  onChange={(e) => setLinkZoom(e.target.value)}
+                  placeholder="https://zoom.us/j/..."
+                  style={{
+                    ...estilos.inputModal, 
+                    backgroundColor: mantenerLinkAnterior ? '#E2E8F0' : '#FAFAFA'
+                  }}
+                  disabled={mantenerLinkAnterior}
+                  required
+                />
+                {!mantenerLinkAnterior && (
+                  <span style={estilos.ayudaInput}>Introduce el nuevo enlace o activa el switch superior para reutilizar el anterior.</span>
+                )}
+              </div>
+
+              <div style={estilos.contenedorBotonesAccion}>
+                <button type="submit" disabled={cargando} style={estilos.botonGuardarPrincipal}>
+                  {cargando ? 'Procesando...' : '💾 Confirmar Reprogramación'}
+                </button>
+                <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrarModal}>
+                  Desistir / Cambiar Fecha
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
@@ -417,12 +473,10 @@ const estilos = {
   btnRangoActivo: { flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#00796B', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
   btnRangoInactivo: { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFF', color: '#64748B', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
 
-  formulario: { display: 'flex', flexDirection: 'column', gap: '14px' },
-  infoSeleccion: { fontSize: '0.85rem', color: '#00796B', margin: '0 0 5px 0', backgroundColor: '#E0F2F1', padding: '10px', borderRadius: '8px' },
+  infoSeleccion: { fontSize: '0.85rem', color: '#00A89F', margin: '0 0 10px 0', backgroundColor: '#E0F2F1', padding: '10px', borderRadius: '8px' },
   grupoInput: { display: 'flex', flexDirection: 'column', gap: '5px', textAlign: 'left' },
   label: { fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' },
-  input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
-  ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
+  ayudaInput: { fontSize: '0.7rem', color: '#64748B', marginTop: '3px' },
   
   contenedorTarjetasDias: { display: 'flex', flexDirection: 'column', gap: '12px' },
   tarjetaDia: { border: '1px solid #00A89F', borderRadius: '8px', backgroundColor: '#FFF', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' },
@@ -432,7 +486,26 @@ const estilos = {
   tarjetaDiaBody: { padding: '12px', backgroundColor: '#FFF' },
   
   gridSlots: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' },
-  itemSlotHora: { padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.8rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s ease' },
+  itemSlotHora: { padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.8rem', cursor: 'pointer', textAlign: 'center', backgroundColor: '#FFF', transition: 'all 0.15s ease' },
 
-  botonPrimario: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px', width: '100%', boxShadow: '0 4px 10px rgba(0,168,159,0.3)' }
+  // Estilos del Modal y Switch
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
+  modalContenido: { backgroundColor: '#FFF', padding: '25px', borderRadius: '14px', width: '100%', maxWidth: '440px', boxSizing: 'border-box', boxShadow: '0 10px 25px rgba(0,0,0,0.15)' },
+  modalHeaderDecorado: { borderBottom: '2px solid #E0F2F1', paddingBottom: '10px', marginBottom: '15px', textAlign: 'center' },
+  modalTitulo: { fontSize: '1.05rem', color: '#00796B', fontWeight: 'bold', margin: '0 0 4px 0' },
+  modalSubFecha: { fontSize: '0.8rem', color: '#555', fontWeight: 'bold' },
+  formularioModal: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  grupoInputModal: { display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' },
+  labelModal: { fontSize: '0.75rem', fontWeight: 'bold', color: '#34495E' },
+  textoInvitadoModal: { fontSize: '0.85rem', color: '#1E293B', margin: '0' },
+  
+  contenedorSwitch: { backgroundColor: '#F1F5F9', padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', textAlign: 'left' },
+  labelSwitch: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', fontWeight: 'bold', color: '#334155', cursor: 'pointer' },
+  checkboxSwitch: { width: '18px', height: '18px', cursor: 'pointer', accentColor: '#00A89F' },
+  textoAnteriorLink: { display: 'block', fontSize: '0.7rem', color: '#64748B', marginTop: '4px', wordBreak: 'break-all' },
+
+  inputModal: { padding: '9px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' },
+  contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' },
+  botonGuardarPrincipal: { width: '100%', padding: '11px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,168,159,0.3)' },
+  botonCerrarModal: { width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #CFD8DC', background: '#FFFFFF', color: '#607D8B', fontSize: '0.80rem', fontWeight: 'bold', cursor: 'pointer' }
 };

@@ -299,7 +299,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
       }
 
       await cargarDatosSupabase();
-      setTimeout(() => setModalAbierto(false), 1200); // Cierra la ventana automáticamente tras guardar con éxito
+      setTimeout(() => setModalAbierto(false), 1200);
     } catch (err) {
       setMensaje('Error al guardar: ' + err.message);
     }
@@ -447,7 +447,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
           />
         </div>
       ) : (
-        /* Vista de Agenda Interactiva con Enlace Directo a la Reunión */
+        /* Vista de Agenda Interactiva con URL Completa y Visible */
         <div style={estilos.agendaContainer}>
           <h3 style={estilos.agendaTitulo}>Listado y Gestión de Citas</h3>
           {citas.length === 0 ? (
@@ -466,19 +466,20 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                         <b>{c.tipo_sesion === 'Grupal' ? `👥 Grupo: ${c.nombre_grupo}` : `👤 Invitado: ${emp?.nombre_completo || 'Individual'}`}</b>
                       </p>
 
-                      {/* Enlace directo clicable para ingresar a la reunión */}
+                      {/* URL completa y visible para verificación */}
                       {c.link_zoom ? (
-                        <p style={estilos.itemLinkContenedor}>
-                          🔗 <b>Reunión:</b>{' '}
+                        <div style={estilos.itemLinkContenedor}>
+                          🔗 <b>Link:</b>{' '}
                           <a 
                             href={c.link_zoom} 
                             target="_blank" 
                             rel="noopener noreferrer" 
                             style={estilos.enlaceReunion}
+                            title="Haz clic para abrir la reunión"
                           >
-                            Unirse a la Sesión (Zoom / Meet)
+                            {c.link_zoom}
                           </a>
-                        </p>
+                        </div>
                       ) : (
                         <p style={estilos.itemSinLink}>🔗 Enlace de reunión pendiente</p>
                       )}
@@ -537,7 +538,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         </div>
       )}
 
-      {/* Modal General de Creación / Edición (SIN botones de correo ni whatsapp) */}
+      {/* Modal General de Creación / Edición */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -664,7 +665,7 @@ const estilos = {
   filaCitaItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FAFAFA', padding: '12px 15px', borderRadius: '8px', border: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' },
   itemFechaHora: { fontSize: '0.8rem', color: '#475569', margin: '0 0 4px 0', fontWeight: 'bold' },
   itemDetalle: { fontSize: '0.85rem', color: '#1E293B', margin: '0 0 4px 0' },
-  itemLinkContenedor: { fontSize: '0.8rem', color: '#334155', margin: '2px 0 6px 0', wordBreak: 'break-all' },
+  itemLinkContenedor: { fontSize: '0.8rem', color: '#334155', margin: '4px 0 6px 0', wordBreak: 'break-all', backgroundColor: '#F1F5F9', padding: '6px 8px', borderRadius: '6px', border: '1px solid #E2E8F0' },
   enlaceReunion: { color: '#00A89F', fontWeight: 'bold', textDecoration: 'underline' },
   itemSinLink: { fontSize: '0.75rem', color: '#94A3B8', margin: '2px 0 6px 0', fontStyle: 'italic' },
   badgeEstado: { padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' },
@@ -689,5 +690,5 @@ const estilos = {
   
   contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' },
   botonGuardarPrincipal: { width: '100%', padding: '11px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,168,159,0.3)' },
-  botonCerrarModal: { width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #CFD8DC', background: '#FFFFFF', color: '#607D8B', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
+  botonCerrarModal: { width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #CFD8DC', background: '#FFFFFF', color: '#607D8B', fontSize: '0.80rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
 };

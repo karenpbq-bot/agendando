@@ -99,41 +99,43 @@ export default function Calendario({ usuarioId }) {
   }, [citas, empresarios]);
 
   const esHorarioRestringido = (fechaStr, hInicio, hFin) => {
-    const aMinutos = (hStr) => {
-      const [h, m] = hStr.split(':').map(Number);
-      return h * 60 + m;
-    };
-
-    const iniMin = aMinutos(hInicio);
-    const finMin = aMinutos(hFin);
-    const jornadaIniMin = aMinutos(jornadaChair.inicio);
-    const jornadaFinMin = aMinutos(jornadaChair.fin);
-
-    if (iniMin < jornadaIniMin || finMin > jornadaFinMin) {
-      return 'Fuera de la jornada laboral configurada.';
-    }
-
     const restDia = restricciones.find(r => r.fecha_especifica?.substring(0, 10) === fechaStr);
-    if (!restDia) return null;
-
-    if (restDia.bloqueado_todo_el_dia) {
+    if (restDia && restDia.bloqueado_todo_el_dia) {
       return 'Este día se encuentra totalmente bloqueado por restricciones.';
     }
 
-    const tramos = [
-      { i: restDia.tramo_1_inicio, f: restDia.tramo_1_fin },
-      { i: restDia.tramo_2_inicio, f: restDia.tramo_2_fin },
-      { i: restDia.tramo_3_inicio, f: restDia.tramo_3_fin },
-      { i: restDia.tramo_4_inicio, f: restDia.tramo_4_fin },
-    ];
+    if (hInicio && hFin) {
+      const aMinutos = (hStr) => {
+        const [h, m] = hStr.split(':').map(Number);
+        return h * 60 + m;
+      };
 
-    for (let t of tramos) {
-      if (t.i && t.f) {
-        const tIniMin = aMinutos(t.i.substring(0, 5));
-        const tFinMin = aMinutos(t.f.substring(0, 5));
+      const iniMin = aMinutos(hInicio);
+      const finMin = aMinutos(hFin);
+      const jornadaIniMin = aMinutos(jornadaChair.inicio);
+      const jornadaFinMin = aMinutos(jornadaChair.fin);
 
-        if (iniMin < tFinMin && finMin > tIniMin) {
-          return `El horario interfiere con un tramo restringido (${t.i.substring(0, 5)} - ${t.f.substring(0, 5)}).`;
+      if (iniMin < jornadaIniMin || finMin > jornadaFinMin) {
+        return 'Fuera de la jornada laboral configurada.';
+      }
+
+      if (!restDia) return null;
+
+      const tramos = [
+        { i: restDia.tramo_1_inicio, f: restDia.tramo_1_fin },
+        { i: restDia.tramo_2_inicio, f: restDia.tramo_2_fin },
+        { i: restDia.tramo_3_inicio, f: restDia.tramo_3_fin },
+        { i: restDia.tramo_4_inicio, f: restDia.tramo_4_fin },
+      ];
+
+      for (let t of tramos) {
+        if (t.i && t.f) {
+          const tIniMin = aMinutos(t.i.substring(0, 5));
+          const tFinMin = aMinutos(t.f.substring(0, 5));
+
+          if (iniMin < tFinMin && finMin > tIniMin) {
+            return `El horario interfiere con un tramo restringido (${t.i.substring(0, 5)} - ${t.f.substring(0, 5)}).`;
+          }
         }
       }
     }
@@ -142,16 +144,22 @@ export default function Calendario({ usuarioId }) {
   };
 
   const alSeleccionarSlot = ({ start, end, action }) => {
+    const anio = start.getFullYear();
+    const mes = String(start.getMonth() + 1).padStart(2, '0');
+    const dia = String(start.getDate()).padStart(2, '0');
+    const fechaFormateada = `${anio}-${mes}-${dia}`;
+
+    const restDia = restricciones.find(r => r.fecha_especifica?.substring(0, 10) === fechaFormateada);
+    if (restDia && restDia.bloqueado_todo_el_dia) {
+      alert('⚠️ Este día está completamente bloqueado por restricciones.');
+      return;
+    }
+
     if (vistaActual === 'month' && action === 'click') {
       setFechaActualCalendario(start);
       setVistaActual('day');
       return;
     }
-
-    const anio = start.getFullYear();
-    const mes = String(start.getMonth() + 1).padStart(2, '0');
-    const dia = String(start.getDate()).padStart(2, '0');
-    const fechaFormateada = `${anio}-${mes}-${dia}`;
 
     const horaIniStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
     const horaFinStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
@@ -269,6 +277,25 @@ export default function Calendario({ usuarioId }) {
     };
   };
 
+  const dayPropGetter = (date) => {
+    const anio = date.getFullYear();
+    const mes = String(date.getMonth() + 1).padStart(2, '0');
+    const dia = String(date.getDate()).padStart(2, '0');
+    const fechaStr = `${anio}-${mes}-${dia}`;
+
+    const restDia = restricciones.find(r => r.fecha_especifica?.substring(0, 10) === fechaStr);
+    if (restDia && restDia.bloqueado_todo_el_dia) {
+      return {
+        style: {
+          backgroundColor: '#E9ECEF',
+          backgroundImage: 'repeating-linear-gradient(45deg, #DEE2E6, #DEE2E6 10px, #E9ECEF 10px, #E9ECEF 20px)',
+          opacity: 0.9
+        }
+      };
+    }
+    return {};
+  };
+
   const slotPropGetter = (date) => {
     const horaStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     const anio = date.getFullYear();
@@ -314,18 +341,47 @@ export default function Calendario({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      {/* Tarjeta de Encabezado / Leyenda Colorida */}
+      {/* Inyección de Estilos para Colorear la Barra de Navegación de RBC */}
+      <style>{`
+        .rbc-btn-group button {
+          background-color: #FFFFFF !important;
+          color: #00796B !important;
+          border: 1px solid #B2DFDB !important;
+          font-weight: bold !important;
+          font-size: 0.8rem !important;
+          padding: 6px 12px !important;
+          transition: all 0.2s ease;
+        }
+        .rbc-btn-group button:hover {
+          background-color: #E0F2F1 !important;
+          color: #004D40 !important;
+        }
+        .rbc-btn-group button.rbc-active {
+          background-color: #00A89F !important;
+          color: #FFFFFF !important;
+          border-color: #00897B !important;
+          box-shadow: 0 2px 4px rgba(0,168,159,0.3);
+        }
+        .rbc-toolbar-label {
+          font-weight: bold !important;
+          color: #2C3E50 !important;
+          font-size: 1.1rem !important;
+        }
+        .rbc-toolbar {
+          margin-bottom: 20px !important;
+        }
+      `}</style>
+
       <div style={estilos.tarjetaHeader}>
         <div style={estilos.tituloSeccion}>📅 Cronograma de Sesiones y Mentorías</div>
         <div style={estilos.leyenda}>
           <span style={estilos.badgeLeyendaGrupal}><b style={{color: '#004D40'}}>■</b> Cita Grupal</span>
           <span style={estilos.badgeLeyendaIndividual}><b style={{color: '#01579B'}}>■</b> Cita Individual</span>
-          <span style={estilos.badgeLeyendaRestriccion}><b style={{color: '#6C757D'}}>■</b> Horario Restringido</span>
+          <span style={estilos.badgeLeyendaRestriccion}><b style={{color: '#6C757D'}}>■</b> Bloqueado / Restringido</span>
         </div>
-        <div style={estilos.instruccion}>💡 <i>Haz clic en cualquier día del mes para gestionarlo en la vista detallada por Hora/Día.</i></div>
+        <div style={estilos.instruccion}>💡 <i>Haz clic en cualquier día del mes para gestionarlo en la vista detallada por Hora/Día. Los días bloqueados no permiten agendar.</i></div>
       </div>
 
-      {/* Contenedor Principal del Calendario */}
       <div style={estilos.calendarioWrapper}>
         <Calendar
           localizer={localizer}
@@ -342,6 +398,7 @@ export default function Calendario({ usuarioId }) {
           onSelectEvent={alSeleccionarEvento}
           eventPropGetter={eventPropGetter}
           slotPropGetter={slotPropGetter}
+          dayPropGetter={dayPropGetter}
           min={new Date(1970, 0, 1, 0, 0, 0)}
           max={new Date(1970, 0, 1, 23, 59, 59)}
           messages={{
@@ -360,7 +417,6 @@ export default function Calendario({ usuarioId }) {
         />
       </div>
 
-      {/* Modal Estilizado */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>

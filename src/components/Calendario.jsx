@@ -299,7 +299,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
       }
 
       await cargarDatosSupabase();
-      // NOTA: Ya no cerramos la ventana automáticamente para que puedas usar los botones de WhatsApp y Correo
+      setTimeout(() => setModalAbierto(false), 1200); // Cierra la ventana automáticamente tras guardar con éxito
     } catch (err) {
       setMensaje('Error al guardar: ' + err.message);
     }
@@ -360,27 +360,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
       };
     }
     return {};
-  };
-
-  const enviarPorWhatsApp = () => {
-    const empresObj = empresarios.find(e => e.id === Number(empresarioId));
-    if (!empresObj || !empresObj.telefono) {
-      setMensaje('El invitado no tiene teléfono registrado.');
-      return;
-    }
-    const texto = encodeURIComponent(`Hola ${empresObj.nombre_completo}, tu sesión ha quedado programada para el ${fechaSeleccionadaStr} de ${horaInicio} a ${horaFin}. Zoom: ${linkZoom || 'Pendiente'}`);
-    window.open(`https://wa.me/${empresObj.telefono.replace(/\+/g, '')}?text=${texto}`, '_blank');
-  };
-
-  const enviarPorCorreo = () => {
-    const empresObj = empresarios.find(e => e.id === Number(empresarioId));
-    if (!empresObj || !empresObj.email) {
-      setMensaje('El invitado no tiene correo registrado.');
-      return;
-    }
-    const asunto = encodeURIComponent('Convocatoria a Sesión - Agendando');
-    const cuerpo = encodeURIComponent(`Hola ${empresObj.nombre_completo},\n\nTu sesión ha sido agendada para el ${fechaSeleccionadaStr} de ${horaInicio} a ${horaFin}.\nLink: ${linkZoom}\n\nAtentamente,\nAgendando`);
-    window.open(`mailto:${empresObj.email}?subject=${asunto}&body=${cuerpo}`);
   };
 
   return (
@@ -468,7 +447,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
           />
         </div>
       ) : (
-        /* Vista de Agenda con Botones Confirmar y Cancelar */
+        /* Vista de Agenda Interactiva con Enlace Directo a la Reunión */
         <div style={estilos.agendaContainer}>
           <h3 style={estilos.agendaTitulo}>Listado y Gestión de Citas</h3>
           {citas.length === 0 ? (
@@ -481,11 +460,29 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                 const esReservado = c.estado === 'reservado' || c.estado === 'Reservada';
                 return (
                   <div key={c.id} style={{...estilos.filaCitaItem, opacity: esCancelada ? 0.6 : 1}}>
-                    <div>
+                    <div style={{ flex: 1, paddingRight: '10px' }}>
                       <p style={estilos.itemFechaHora}>📅 {c.fecha_cita} &nbsp;|&nbsp; ⏰ {c.hora_inicio?.substring(0,5)} - {c.hora_fin?.substring(0,5)}</p>
                       <p style={estilos.itemDetalle}>
                         <b>{c.tipo_sesion === 'Grupal' ? `👥 Grupo: ${c.nombre_grupo}` : `👤 Invitado: ${emp?.nombre_completo || 'Individual'}`}</b>
                       </p>
+
+                      {/* Enlace directo clicable para ingresar a la reunión */}
+                      {c.link_zoom ? (
+                        <p style={estilos.itemLinkContenedor}>
+                          🔗 <b>Reunión:</b>{' '}
+                          <a 
+                            href={c.link_zoom} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            style={estilos.enlaceReunion}
+                          >
+                            Unirse a la Sesión (Zoom / Meet)
+                          </a>
+                        </p>
+                      ) : (
+                        <p style={estilos.itemSinLink}>🔗 Enlace de reunión pendiente</p>
+                      )}
+
                       <span style={{
                         ...estilos.badgeEstado, 
                         backgroundColor: (c.estado === 'confirmado' || c.estado === 'Confirmada') ? '#E0F2F1' : (c.estado === 'reservado' || c.estado === 'Reservada') ? '#FFF9C4' : '#FFEBEE',
@@ -494,6 +491,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                         {c.estado?.toUpperCase()}
                       </span>
                     </div>
+
                     <div style={estilos.grupoBotonesFila}>
                       <button 
                         onClick={() => {
@@ -539,7 +537,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         </div>
       )}
 
-      {/* Modal General de Creación / Edición */}
+      {/* Modal General de Creación / Edición (SIN botones de correo ni whatsapp) */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -641,14 +639,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                 <button type="submit" style={estilos.botonGuardarPrincipal}>
                   💾 Guardar cita
                 </button>
-                <div style={estilos.filaAccionesSecundarias}>
-                  <button type="button" onClick={enviarPorWhatsApp} style={estilos.botonWs}>
-                    💬 WhatsApp
-                  </button>
-                  <button type="button" onClick={enviarPorCorreo} style={estilos.botonCorreo}>
-                    ✉️ Correo
-                  </button>
-                </div>
                 <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrarModal}>
                   Cerrar Ventana
                 </button>
@@ -673,7 +663,10 @@ const estilos = {
   tablaAgenda: { display: 'flex', flexDirection: 'column', gap: '10px' },
   filaCitaItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FAFAFA', padding: '12px 15px', borderRadius: '8px', border: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' },
   itemFechaHora: { fontSize: '0.8rem', color: '#475569', margin: '0 0 4px 0', fontWeight: 'bold' },
-  itemDetalle: { fontSize: '0.85rem', color: '#1E293B', margin: '0 0 6px 0' },
+  itemDetalle: { fontSize: '0.85rem', color: '#1E293B', margin: '0 0 4px 0' },
+  itemLinkContenedor: { fontSize: '0.8rem', color: '#334155', margin: '2px 0 6px 0', wordBreak: 'break-all' },
+  enlaceReunion: { color: '#00A89F', fontWeight: 'bold', textDecoration: 'underline' },
+  itemSinLink: { fontSize: '0.75rem', color: '#94A3B8', margin: '2px 0 6px 0', fontStyle: 'italic' },
   badgeEstado: { padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' },
   grupoBotonesFila: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   botonEditar: { padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#0288D1', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
@@ -696,8 +689,5 @@ const estilos = {
   
   contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' },
   botonGuardarPrincipal: { width: '100%', padding: '11px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,168,159,0.3)' },
-  filaAccionesSecundarias: { display: 'flex', gap: '8px' },
-  botonWs: { flex: 1, padding: '9px', borderRadius: '8px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 5px rgba(37,211,102,0.3)' },
-  botonCorreo: { flex: 1, padding: '9px', borderRadius: '8px', border: 'none', background: '#0288D1', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 5px rgba(2,136,209,0.3)' },
-  botonCerrarModal: { width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #CFD8DC', background: '#FFFFFF', color: '#607D8B', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
+  botonCerrarModal: { width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #CFD8DC', background: '#FFFFFF', color: '#607D8B', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
 };

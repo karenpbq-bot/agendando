@@ -11,7 +11,7 @@ export default function Reprogramaciones({ usuarioId }) {
   // Opciones de rango
   const [rangoDias, setRangoDias] = useState(7);
   const [horariosAgrupadosPorDia, setHorariosAgrupadosPorDia] = useState({});
-  const [diasAbiertos, setDiasAbiertos] = useState({}); // Controla qué acordeones están expandidos
+  const [diasAbiertos, setDiasAbiertos] = useState({});
   const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
 
   // Campo opcional de enlace de reunión
@@ -178,7 +178,6 @@ export default function Reprogramaciones({ usuarioId }) {
       }
 
       setHorariosAgrupadosPorDia(agrupado);
-      // Por defecto abrir el primer día disponible si existe
       const primerDia = Object.keys(agrupado)[0];
       if (primerDia) {
         setDiasAbiertos({ [primerDia]: true });
@@ -298,7 +297,6 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
         </div>
       ) : (
-        /* PANTALLA DEDICADA DE SELECCIÓN DE HORARIO POR ACORDEÓN DE DÍAS */
         <div style={estilos.cardSeccionAmpliada}>
           <div style={estilos.headerPantallaReprogramacion}>
             <button onClick={() => setCitaSeleccionada(null)} style={estilos.botonVolver}>
@@ -312,7 +310,6 @@ export default function Reprogramaciones({ usuarioId }) {
               Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>
             </p>
 
-            {/* Botones de Rango de Días */}
             <div style={estilos.filaBotonesRango}>
               <button 
                 type="button" 
@@ -342,16 +339,14 @@ export default function Reprogramaciones({ usuarioId }) {
                     const estaAbierto = diasAbiertos[fecha];
                     return (
                       <div key={fecha} style={estilos.acordeonDia}>
-                        {/* Cabecera del Acordeón (Fecha) */}
                         <div 
                           onClick={() => toggleDiaAbierto(fecha)}
                           style={estilos.acordeonHeader}
                         >
-                          <span style={estilos.acordeonTituloFecha}>📅 {fecha} <small style={{color: '#64748B', fontWeight: 'normal'}}>({slots.length} libres)</small></span>
+                          <span style={estilos.acordeonTituloFecha}>{fecha} <small style={{color: '#64748B', fontWeight: 'normal'}}>({slots.length} libres)</small></span>
                           <span style={estilos.acordeonFlecha}>{estaAbierto ? '▲' : '▼'}</span>
                         </div>
 
-                        {/* Contenido Desplegable (Slots de Horas) */}
                         {estaAbierto && (
                           <div style={estilos.acordeonBody}>
                             <div style={estilos.gridSlots}>
@@ -434,12 +429,15 @@ const estilos = {
   input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
   ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
   
-  listaHorariosAmplia: { maxHeight: '360px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
+  listaHorariosAmplia: { maxHeight: '380px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
   acordeonDia: { border: '1px solid #CBD5E1', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#FFF' },
   acordeonHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: '#F1F5F9', cursor: 'pointer', userSelect: 'none' },
   acordeonTituloFecha: { fontSize: '0.85rem', fontWeight: 'bold', color: '#1E293B' },
   acordeonFlecha: { fontSize: '0.75rem', color: '#64748B' },
-  acordeonBody: { padding: '10px', backgroundColor: '#FFF', borderTop: '1px solid #E2E8F0' },
+  
+  /* AQUÍ ESTÁ EL CAMBIO CRUCIAL: max-height y overflowY para permitir scroll interno */
+  acordeonBody: { padding: '10px', backgroundColor: '#FFF', borderTop: '1px solid #E2E8F0', maxHeight: '220px', overflowY: 'auto' },
+  
   gridSlots: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' },
   itemSlotHora: { padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.8rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s ease' },
 

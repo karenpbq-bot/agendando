@@ -219,7 +219,6 @@ export default function Reprogramaciones({ usuarioId }) {
 
     try {
       const tieneLink = linkSesion && linkSesion.trim() !== '';
-      const nuevoEstado = tieneLink ? 'confirmado' : 'Propuesta_Reprogramacion';
 
       const { error } = await supabase
         .from('agd_citas')
@@ -228,17 +227,13 @@ export default function Reprogramaciones({ usuarioId }) {
           hora_inicio: horarioSeleccionado.horaInicio,
           hora_fin: horarioSeleccionado.horaFin,
           link_zoom: tieneLink ? linkSesion.trim() : null,
-          estado: nuevoEstado
+          estado: 'reservado' // REGLA: Toda nueva cita o reprogramación nace en estado reservado a la espera de confirmación
         })
         .eq('id', citaSeleccionada.id);
 
       if (error) throw error;
 
-      setMensaje(
-        tieneLink 
-          ? '¡Cita reprogramada y confirmada con éxito!' 
-          : 'Propuesta enviada. Solicitud de confirmación enviada al invitado.'
-      );
+      setMensaje('¡Propuesta enviada! Cita registrada con estado Reservado a la espera de confirmación.');
 
       setCitaSeleccionada(null);
       setHorariosAgrupadosPorDia({});

@@ -18,7 +18,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
   const [vistaActual, setVistaActual] = useState('month');
   const [fechaActualCalendario, setFechaActualCalendario] = useState(new Date());
 
-  // Modal principal de agendamiento/edición
   const [modalAbierto, setModalAbierto] = useState(false);
   const [citaExistenteId, setCitaExistenteId] = useState(null);
   const [fechaSeleccionadaStr, setFechaSeleccionadaStr] = useState('');
@@ -29,16 +28,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
   const [horaInicio, setHoraInicio] = useState('09:00');
   const [horaFin, setHoraFin] = useState('09:45');
   const [linkZoom, setLinkZoom] = useState('');
-  const [estadoCita, setEstadoCita] = useState('confirmado');
   const [mensaje, setMensaje] = useState('');
-
-  // Modal específico para opciones de Cancelación / Reprogramación
-  const [modalCancelacionAbierto, setModalCancelacionAbierto] = useState(false);
-  const [citaSeleccionadaParaCancelar, setCitaSeleccionadaParaCancelar] = useState(null);
-  const [accionCancelacion, setAccionCancelacion] = useState('solo_cancelar'); // 'solo_cancelar' o 'reprogramar'
-  const [nuevaFechaReprogramacion, setNuevaFechaReprogramacion] = useState('');
-  const [nuevaHoraInicio, setNuevaHoraInicio] = useState('09:00');
-  const [nuevaHoraFin, setNuevaHoraFin] = useState('09:45');
 
   useEffect(() => {
     if (usuarioId) {
@@ -204,7 +194,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
     setEmpresarioId('');
     setNombreGrupo('');
     setLinkZoom('');
-    setEstadoCita('confirmado');
     setMensaje('');
     setModalAbierto(true);
   };
@@ -219,60 +208,38 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
     setHoraInicio(c.hora_inicio || '');
     setHoraFin(c.hora_fin || '');
     setLinkZoom(c.link_zoom || '');
-    setEstadoCita(c.estado || 'confirmado');
     setMensaje('');
     setModalAbierto(true);
   };
 
-  // Abrir ventana de cancelación para una cita específica
-  const abrirModalCancelacion = (cita) => {
-    setCitaSeleccionadaParaCancelar(cita);
-    setAccionCancelacion('solo_cancelar');
-    setNuevaFechaReprogramacion(cita.fecha_cita);
-    setNuevaHoraInicio(cita.hora_inicio?.substring(0, 5) || '09:00');
-    setNuevaHoraFin(cita.hora_fin?.substring(0, 5) || '09:45');
-    setModalCancelacionAbierto(true);
-  };
-
-  // Procesar la decisión tomada en la ventana de cancelación
-  const procesarCancelacionOReprogramacion = async (e) => {
-    e.preventDefault();
-    if (!citaSeleccionadaParaCancelar) return;
-
+  const cancelarCitaDirecta = async (citaId) => {
+    if (!window.confirm('¿Estás seguro de cancelar esta cita? Esto liberará inmediatamente el espacio en tu horario.')) return;
+    
     try {
-      if (accionCancelacion === 'solo_cancelar') {
-        // 1. Simplemente cancelar (libera horario y cambia estado)
-        const { error } = await supabase
-          .from('agd_citas')
-          .update({ estado: 'cancelado' })
-          .eq('id', citaSeleccionadaParaCancelar.id);
+      const { error } = await supabase
+        .from('agd_citas')
+        .update({ estado: 'cancelado' })
+        .eq('id', citaId);
 
-        if (error) throw error;
-      } else {
-        // 2. Enviar nueva fecha y hora (Reprogramar)
-        const motivo = esHorarioRestringido(nuevaFechaReprogramacion, nuevaHoraInicio, nuevaHoraFin);
-        if (motivo) {
-          alert(`⚠️ No se puede reprogramar a este horario:\n${motivo}`);
-          return;
-        }
-
-        const { error } = await supabase
-          .from('agd_citas')
-          .update({
-            fecha_cita: nuevaFechaReprogramacion,
-            hora_inicio: nuevaHoraInicio,
-            hora_fin: nuevaHoraFin,
-            estado: 'confirmado'
-          })
-          .eq('id', citaSeleccionadaParaCancelar.id);
-
-        if (error) throw error;
-      }
-
-      setModalCancelacionAbierto(false);
+      if (error) throw error;
       await cargarDatosSupabase();
     } catch (err) {
-      alert('Error al procesar la solicitud: ' + err.message);
+      alert('Error al cancelar la cita: ' + err.message);
+    }
+  };
+
+  // NUEVA FUNCIÓN: Cambiar estado a Confirmado desde el botón de la Agenda
+  const confirmarCitaDirecta = async (citaId) => {
+    try {
+      const { error } = await supabase
+        .from('agd_citas')
+        .update({ estado: 'confirmado' })
+        .eq('id', citaId);
+
+      if (error) throw error;
+      await cargarDatosSupabase();
+    } catch (err) {
+      alert('Error al confirmar la cita: ' + err.message);
     }
   };
 
@@ -281,7 +248,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
     setMensaje('');
 
     const motivoRestriccion = esHorarioRestringido(fechaSeleccionadaStr, horaInicio, horaFin);
-    if (motivoRestriccion && estadoCita !== 'cancelado') {
+    if (motivoRestriccion) {
       setMensaje(`⚠️ Bloqueado: ${motivoRestriccion}`);
       return;
     }
@@ -304,7 +271,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
       return nuevoIniMin < cFinMin && nuevoFinMin > cIniMin;
     });
 
-    if (haySolape && estadoCita !== 'cancelado') {
+    if (haySolape) {
       setMensaje('⚠️ Error: Ya existe otra cita agendada en este mismo horario.');
       return;
     }
@@ -319,7 +286,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         tipo_sesion: tipoSession,
         nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
         link_zoom: linkZoom,
-        estado: estadoCita
+        // REGLA: Toda cita nueva u editada nace o se mantiene por defecto como 'reservado' si es nueva, respetando su estado si ya estaba confirmada
       };
 
       if (citaExistenteId) {
@@ -327,9 +294,10 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         if (error) throw error;
         setMensaje('¡Cita actualizada correctamente!');
       } else {
+        payload.estado = 'reservado'; // Por defecto toda nueva cita es 'reservado'
         const { error } = await supabase.from('agd_citas').insert([payload]);
         if (error) throw error;
-        setMensaje('¡Cita creada correctamente!');
+        setMensaje('¡Cita creada con estado Reservado!');
       }
 
       await cargarDatosSupabase();
@@ -502,7 +470,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
           />
         </div>
       ) : (
-        /* Vista de Agenda con opción de Cancelación */
+        /* Vista de Agenda Interactiva con Botón Confirmar y Cancelar */
         <div style={estilos.agendaContainer}>
           <h3 style={estilos.agendaTitulo}>Listado y Gestión de Citas</h3>
           {citas.length === 0 ? (
@@ -512,6 +480,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
               {citas.map(c => {
                 const emp = empresarios.find(e => e.id === Number(c.empresario_id || c.invitado_id));
                 const esCancelada = c.estado === 'cancelado' || c.estado === 'Cancelada';
+                const esReservado = c.estado === 'reservado' || c.estado === 'Reservada';
                 return (
                   <div key={c.id} style={{...estilos.filaCitaItem, opacity: esCancelada ? 0.6 : 1}}>
                     <div>
@@ -538,7 +507,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                           setHoraInicio(c.hora_inicio || '');
                           setHoraFin(c.hora_fin || '');
                           setLinkZoom(c.link_zoom || '');
-                          setEstadoCita(c.estado || 'confirmado');
                           setMensaje('');
                           setModalAbierto(true);
                         }}
@@ -546,9 +514,20 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                       >
                         ✏️ Editar
                       </button>
+
+                      {/* Botón Confirmar exclusivo si está en estado reservado */}
+                      {esReservado && (
+                        <button 
+                          onClick={() => confirmarCitaDirecta(c.id)}
+                          style={estilos.botonConfirmarDirecto}
+                        >
+                          ✅ Confirmar
+                        </button>
+                      )}
+
                       {!esCancelada && (
                         <button 
-                          onClick={() => abrirModalCancelacion(c)}
+                          onClick={() => cancelarCitaDirecta(c.id)}
                           style={estilos.botonCancelarDirecto}
                         >
                           ❌ Cancelar
@@ -563,7 +542,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         </div>
       )}
 
-      {/* Modal General de Creación / Edición */}
+      {/* Modal General de Creación / Edición (SIN selector de Estado) */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -573,19 +552,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
             </div>
             
             <form onSubmit={guardarCita} style={estilos.formularioModal}>
-              <div style={estilos.grupoInput}>
-                <label style={estilos.label}>Estado de la Sesión</label>
-                <select 
-                  value={estadoCita} 
-                  onChange={(e) => setEstadoCita(e.target.value)}
-                  style={{...estilos.input, fontWeight: 'bold', color: estadoCita === 'cancelado' ? '#D32F2F' : '#00796B'}}
-                >
-                  <option value="confirmado">Confirmado / Activo</option>
-                  <option value="reservado">Reservado</option>
-                  <option value="cancelado">Cancelado (Libera Horario)</option>
-                </select>
-              </div>
-
               <div style={estilos.grupoInput}>
                 <label style={estilos.label}>Tipo de Sesión</label>
                 <select 
@@ -669,7 +635,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                   onChange={(e) => setLinkZoom(e.target.value)} 
                   placeholder="https://zoom.us/j/..."
                   style={estilos.input}
-                  required
                 />
               </div>
 
@@ -695,78 +660,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
           </div>
         </div>
       )}
-
-      {/* Modal Específico de Cancelación con Opciones (Reprogramar o Cancelar definitivo) */}
-      {modalCancelacionAbierto && (
-        <div style={estilos.modalOverlay}>
-          <div style={estilos.modalContenido}>
-            <div style={estilos.modalHeaderDecorado}>
-              <h3 style={{...estilos.modalTitulo, color: '#D32F2F'}}>❌ Gestionar Cancelación</h3>
-              <span style={estilos.modalSubFecha}>Elige una opción para esta cita</span>
-            </div>
-            
-            <form onSubmit={procesarCancelacionOReprogramacion} style={estilos.formularioModal}>
-              <div style={estilos.grupoInput}>
-                <label style={estilos.label}>¿Qué deseas hacer con la cita?</label>
-                <select 
-                  value={accionCancelacion} 
-                  onChange={(e) => setAccionCancelacion(e.target.value)}
-                  style={{...estilos.input, fontWeight: 'bold'}}
-                >
-                  <option value="solo_cancelar">Simplemente Cancelar (Liberar Horario)</option>
-                  <option value="reprogramar">Brindar una Nueva Fecha y Hora (Reprogramar)</option>
-                </select>
-              </div>
-
-              {accionCancelacion === 'reprogramar' && (
-                <div style={{display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#F8F9FA', padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0'}}>
-                  <div style={estilos.grupoInput}>
-                    <label style={estilos.label}>Nueva Fecha</label>
-                    <input 
-                      type="date" 
-                      value={nuevaFechaReprogramacion} 
-                      onChange={(e) => setNuevaFechaReprogramacion(e.target.value)} 
-                      style={estilos.input}
-                      required
-                    />
-                  </div>
-                  <div style={estilos.filaHorarios}>
-                    <div style={estilos.grupoInput}>
-                      <label style={estilos.label}>Nueva Hora Inicio</label>
-                      <input 
-                        type="time" 
-                        value={nuevaHoraInicio} 
-                        onChange={(e) => setNuevaHoraInicio(e.target.value)} 
-                        style={estilos.input}
-                        required
-                      />
-                    </div>
-                    <div style={estilos.grupoInput}>
-                      <label style={estilos.label}>Nueva Hora Fin</label>
-                      <input 
-                        type="time" 
-                        value={nuevaHoraFin} 
-                        onChange={(e) => setNuevaHoraFin(e.target.value)} 
-                        style={estilos.input}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div style={estilos.contenedorBotonesAccion}>
-                <button type="submit" style={{...estilos.botonGuardarPrincipal, background: accionCancelacion === 'solo_cancelar' ? '#D32F2F' : '#00796B'}}>
-                  {accionCancelacion === 'solo_cancelar' ? 'Confirmar Cancelación' : 'Guardar Nueva Fecha y Hora'}
-                </button>
-                <button type="button" onClick={() => setModalCancelacionAbierto(false)} style={estilos.botonCerrarModal}>
-                  Volver / Cerrar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -785,8 +678,9 @@ const estilos = {
   itemFechaHora: { fontSize: '0.8rem', color: '#475569', margin: '0 0 4px 0', fontWeight: 'bold' },
   itemDetalle: { fontSize: '0.85rem', color: '#1E293B', margin: '0 0 6px 0' },
   badgeEstado: { padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' },
-  grupoBotonesFila: { display: 'flex', gap: '8px' },
+  grupoBotonesFila: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   botonEditar: { padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#0288D1', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  botonConfirmarDirecto: { padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#00A89F', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   botonCancelarDirecto: { padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#D32F2F', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
   textoVacio: { fontSize: '0.85rem', color: '#64748B', textAlign: 'center', padding: '30px' },
 

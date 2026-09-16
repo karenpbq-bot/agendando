@@ -19,26 +19,57 @@ export default function Reprogramaciones({ usuarioId }) {
 
   const cargarListadosReprogramacion = async () => {
     try {
-      // 1. Cargar citas canceladas (soporta minúsculas/mayúsculas y chair_id/empresario_id)
+      const chairIdNum = Number(usuarioId);
+
+      // 1. Obtener citas canceladas de este Chair
       const { data: dataCanceladas, error: errC } = await supabase
         .from('agd_citas')
-        .select('*, usuarios(nombre_completo, email, telefono)')
-        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`)
+        .select('*')
+        .eq('chair_id', chairIdNum)
         .ilike('estado', 'cancelado');
 
-      if (!errC && dataCanceladas) setCanceladas(dataCanceladas);
+      if (errC) {
+        console.error('Error al cargar canceladas:', errC);
+      } else if (dataCanceladas) {
+        // Enriquecer con datos del empresario/invitado de la tabla usuarios
+        const conUsuarios = await Promise.all(dataCanceladas.map(async (cita) => {
+          if (cita.empresario_id) {
+            const { data: userDat } = await supabase
+              .from('usuarios')
+              .select('nombre_completo, email, telefono')
+              .eq('id', cita.empresario_id)
+              .maybeSingle();
+            return { ...cita, usuarios: userDat };
+          }
+          return { ...cita, usuarios: null };
+        }));
+        setCanceladas(conUsuarios);
+      }
 
-      // 2. Cargar reprogramaciones en curso
+      // 2. Obtener reprogramaciones en curso
       const { data: dataEnCurso, error: errEC } = await supabase
         .from('agd_citas')
-        .select('*, usuarios(nombre_completo, email, telefono)')
-        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`)
+        .select('*')
+        .eq('chair_id', chairIdNum)
         .ilike('estado', 'Propuesta_Reprogramacion');
 
-      if (!errEC && dataEnCurso) setEnCurso(dataEnCurso);
+      if (!errEC && dataEnCurso) {
+        const conUsuariosEC = await Promise.all(dataEnCurso.map(async (cita) => {
+          if (cita.empresario_id) {
+            const { data: userDat } = await supabase
+              .from('usuarios')
+              .select('nombre_completo, email, telefono')
+              .eq('id', cita.empresario_id)
+              .maybeSingle();
+            return { ...cita, usuarios: userDat };
+          }
+          return { ...cita, usuarios: null };
+        }));
+        setEnCurso(conUsuariosEC);
+      }
 
     } catch (err) {
-      console.error('Error cargando listas de reprogramación:', err);
+      console.error('Error general cargando listas de reprogramación:', err);
     }
   };
 
@@ -52,7 +83,7 @@ export default function Reprogramaciones({ usuarioId }) {
       const { data, error } = await supabase
         .from('agd_disponibilidad')
         .select('*')
-        .eq('chair_id', usuarioId)
+        .eq('chair_id', Number(usuarioId))
         .eq('disponible', true)
         .order('fecha', { ascending: true });
 
@@ -75,13 +106,13 @@ export default function Reprogramaciones({ usuarioId }) {
 
     try {
       const tieneLink = linkSesion && linkSesion.trim() !== '';
-      const nuevoEstado = tieneLink ? 'Confirmada' : 'Propuesta_Reprogramacion';
+      const nuevoEstado = tieneLink ? 'confirmado' : 'Propuesta_Reprogramacion';
 
       const { error } = await supabase
         .from('agd_citas')
         .update({
           fecha_propuesta_nueva: horarioSeleccionado,
-          link_sesion: tieneLink ? linkSesion.trim() : null,
+          link_zoom: tieneLink ? linkSesion.trim() : null,
           estado: nuevoEstado
         })
         .eq('id', citaSeleccionada.id);
@@ -118,8 +149,8 @@ export default function Reprogramaciones({ usuarioId }) {
               canceladas.map(c => (
                 <div key={c.id} style={estilos.itemLista}>
                   <div>
-                    <p style={estilos.textoItem}><b>Invitado:</b> {c.usuarios?.nombre_completo || 'N/D'}</p>
-                    <p style={estilos.textoItemDetalle}>Fecha Original: {c.fecha_cita || new Date(c.created_at).toLocaleDateString()}</p>
+                    <p style={estilos.textoItem}><b>Invitado:</b> {c.usuarios?.nombre_completo || 'Invitado ID: ' + c.empresario_id}</p>
+                    <p style={estilos.textoItemDetalle}>Fecha original: {c.fecha_cita} ({c.hora_inicio?.substring(0,5)})</p>
                   </div>
                   <button onClick={() => seleccionarParaReprogramar(c)} style={estilos.botonAccion}>
                     Reprogramar
@@ -137,7 +168,7 @@ export default function Reprogramaciones({ usuarioId }) {
               enCurso.map(e => (
                 <div key={e.id} style={estilos.itemListaEnCurso}>
                   <div>
-                    <p style={estilos.textoItem}><b>Invitado:</b> {e.usuarios?.nombre_completo || 'N/D'}</p>
+                    <p style={estilos.textoItem}><b>Invitado:</b> {e.usuarios?.nombre_completo || 'Invitado ID: ' + e.empresario_id}</p>
                     <p style={estilos.textoItemDetalle}>Propuesta: {e.fecha_propuesta_nueva ? new Date(e.fecha_propuesta_nueva).toLocaleString() : 'Pendiente'}</p>
                   </div>
                   <span style={estilos.badgeEspera}>Esperando Link / Confirmación</span>
@@ -156,7 +187,7 @@ export default function Reprogramaciones({ usuarioId }) {
             ) : (
               <form onSubmit={enviarPropuestaReprogramacion} style={estilos.formulario}>
                 <p style={estilos.infoSeleccion}>
-                  Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo}</b>
+                  Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>
                 </p>
 
                 <div style={estilos.grupoInput}>
@@ -188,7 +219,7 @@ export default function Reprogramaciones({ usuarioId }) {
                     type="url" 
                     value={linkSesion}
                     onChange={(e) => setLinkSesion(e.target.value)}
-                    placeholder="https://meet.google.com/..."
+                    placeholder="https://zoom.us/j/..."
                     style={estilos.input}
                   />
                   <span style={estilos.ayudaInput}>Si no lo colocas, la cita pasará a "Reprogramaciones en curso".</span>

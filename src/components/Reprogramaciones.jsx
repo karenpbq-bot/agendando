@@ -10,7 +10,8 @@ export default function Reprogramaciones({ usuarioId }) {
   
   // Opciones de rango
   const [rangoDias, setRangoDias] = useState(7);
-  const [horariosLibres, setHorariosLibres] = useState([]);
+  const [horariosAgrupadosPorDia, setHorariosAgrupadosPorDia] = useState({});
+  const [diasAbiertos, setDiasAbiertos] = useState({}); // Controla qué acordeones están expandidos
   const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
 
   // Campo opcional de enlace de reunión
@@ -99,7 +100,7 @@ export default function Reprogramaciones({ usuarioId }) {
         if (duracionMinutos <= 0) duracionMinutos = 45;
       }
 
-      const slotsDisponibles = [];
+      const agrupado = {};
       const hoy = dayjs();
 
       for (let i = 0; i < diasRango; i++) {
@@ -115,6 +116,8 @@ export default function Reprogramaciones({ usuarioId }) {
         let cursor = fechaActual.hour(hInicioJ).minute(mInicioJ).second(0);
         const limiteJornada = fechaActual.hour(hFinJ).minute(mFinJ).second(0);
         const citasDelDia = (citasActivas || []).filter(c => c.fecha_cita === fechaStr);
+
+        const slotsDelDia = [];
 
         while (cursor.add(duracionMinutos, 'minute').isBefore(limiteJornada) || cursor.add(duracionMinutos, 'minute').isSame(limiteJornada)) {
           const slotIniStr = cursor.format('HH:mm');
@@ -153,25 +156,33 @@ export default function Reprogramaciones({ usuarioId }) {
             const solapaCita = citasDelDia.some(c => {
               const cIniM = aMin(c.hora_inicio.substring(0, 5));
               const cFinM = aMin(c.hora_fin.substring(0, 5));
-              return sIniM < cFinM && sFinM > cIniM;
+              return sIniM < cFinM && sFinM > cFinM;
             });
 
             if (!solapaCita) {
-              slotsDisponibles.push({
+              slotsDelDia.push({
                 fecha: fechaStr,
                 horaInicio: slotIniStr,
                 horaFin: slotFinStr,
-                // Sin icono y formateado en una sola línea compacta
-                label: `${fechaStr}  |  ${slotIniStr} - ${slotFinStr}`
+                label: `${slotIniStr} - ${slotFinStr}`
               });
             }
           }
 
           cursor = cursor.add(30, 'minute');
         }
+
+        if (slotsDelDia.length > 0) {
+          agrupado[fechaStr] = slotsDelDia;
+        }
       }
 
-      setHorariosLibres(slotsDisponibles);
+      setHorariosAgrupadosPorDia(agrupado);
+      // Por defecto abrir el primer día disponible si existe
+      const primerDia = Object.keys(agrupado)[0];
+      if (primerDia) {
+        setDiasAbiertos({ [primerDia]: true });
+      }
     } catch (err) {
       console.error('Error calculando espacios libres:', err);
     } finally {
@@ -192,6 +203,13 @@ export default function Reprogramaciones({ usuarioId }) {
     if (citaSeleccionada) {
       await calcularEspaciosLibres(dias, citaSeleccionada);
     }
+  };
+
+  const toggleDiaAbierto = (fechaStr) => {
+    setDiasAbiertos(prev => ({
+      ...prev,
+      [fechaStr]: !prev[fechaStr]
+    }));
   };
 
   const enviarPropuestaReprogramacion = async (e) => {
@@ -228,7 +246,7 @@ export default function Reprogramaciones({ usuarioId }) {
       );
 
       setCitaSeleccionada(null);
-      setHorariosLibres([]);
+      setHorariosAgrupadosPorDia({});
       cargarDatosIniciales();
     } catch (err) {
       setMensaje('Error al procesar la reprogramación: ' + err.message);
@@ -280,7 +298,7 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
         </div>
       ) : (
-        /* PANTALLA DEDICADA DE SELECCIÓN DE HORARIO */
+        /* PANTALLA DEDICADA DE SELECCIÓN DE HORARIO POR ACORDEÓN DE DÍAS */
         <div style={estilos.cardSeccionAmpliada}>
           <div style={estilos.headerPantallaReprogramacion}>
             <button onClick={() => setCitaSeleccionada(null)} style={estilos.botonVolver}>
@@ -313,26 +331,54 @@ export default function Reprogramaciones({ usuarioId }) {
             </div>
 
             <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Espacios Libres Disponibles en tu Agenda:</label>
+              <label style={estilos.label}>Espacios Libres por Día:</label>
               {cargando ? (
                 <p style={estilos.textoVacio}>Buscando espacios libres...</p>
-              ) : horariosLibres.length === 0 ? (
+              ) : Object.keys(horariosAgrupadosPorDia).length === 0 ? (
                 <p style={estilos.textoVacio}>No hay espacios libres en este rango.</p>
               ) : (
                 <div style={estilos.listaHorariosAmplia}>
-                  {horariosLibres.map((h, idx) => (
-                    <div 
-                      key={idx} 
-                      onClick={() => setHorarioSeleccionado(h)}
-                      style={{
-                        ...estilos.itemHorario,
-                        borderColor: horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio ? '#00A89F' : '#CBD5E1',
-                        backgroundColor: horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio ? '#E0F2F1' : '#FFFFFF'
-                      }}
-                    >
-                      {h.label}
-                    </div>
-                  ))}
+                  {Object.entries(horariosAgrupadosPorDia).map(([fecha, slots]) => {
+                    const estaAbierto = diasAbiertos[fecha];
+                    return (
+                      <div key={fecha} style={estilos.acordeonDia}>
+                        {/* Cabecera del Acordeón (Fecha) */}
+                        <div 
+                          onClick={() => toggleDiaAbierto(fecha)}
+                          style={estilos.acordeonHeader}
+                        >
+                          <span style={estilos.acordeonTituloFecha}>📅 {fecha} <small style={{color: '#64748B', fontWeight: 'normal'}}>({slots.length} libres)</small></span>
+                          <span style={estilos.acordeonFlecha}>{estaAbierto ? '▲' : '▼'}</span>
+                        </div>
+
+                        {/* Contenido Desplegable (Slots de Horas) */}
+                        {estaAbierto && (
+                          <div style={estilos.acordeonBody}>
+                            <div style={estilos.gridSlots}>
+                              {slots.map((h, idx) => {
+                                const seleccionado = horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio;
+                                return (
+                                  <div 
+                                    key={idx} 
+                                    onClick={() => setHorarioSeleccionado(h)}
+                                    style={{
+                                      ...estilos.itemSlotHora,
+                                      borderColor: seleccionado ? '#00A89F' : '#CBD5E1',
+                                      backgroundColor: seleccionado ? '#E0F2F1' : '#FFFFFF',
+                                      color: seleccionado ? '#004D40' : '#1E293B',
+                                      fontWeight: seleccionado ? 'bold' : 'normal'
+                                    }}
+                                  >
+                                    {h.label}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -387,7 +433,15 @@ const estilos = {
   label: { fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' },
   input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
   ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
-  listaHorariosAmplia: { maxHeight: '340px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
-  itemHorario: { padding: '12px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', whiteSpace: 'nowrap', overflowX: 'auto' },
+  
+  listaHorariosAmplia: { maxHeight: '360px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
+  acordeonDia: { border: '1px solid #CBD5E1', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#FFF' },
+  acordeonHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: '#F1F5F9', cursor: 'pointer', userSelect: 'none' },
+  acordeonTituloFecha: { fontSize: '0.85rem', fontWeight: 'bold', color: '#1E293B' },
+  acordeonFlecha: { fontSize: '0.75rem', color: '#64748B' },
+  acordeonBody: { padding: '10px', backgroundColor: '#FFF', borderTop: '1px solid #E2E8F0' },
+  gridSlots: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' },
+  itemSlotHora: { padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '0.8rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s ease' },
+
   botonPrimario: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px', width: '100%', boxShadow: '0 4px 10px rgba(0,168,159,0.3)' }
 };

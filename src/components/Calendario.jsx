@@ -80,12 +80,18 @@ export default function Calendario({ usuarioId }) {
         const inicioDate = new Date(`${c.fecha_cita}T${c.hora_inicio}`);
         const finDate = new Date(`${c.fecha_cita}T${c.hora_fin}`);
 
+        // Formato corto de hora (HH:mm)
+        const hIniCorto = c.hora_inicio ? c.hora_inicio.substring(0, 5) : '';
+        const hFinCorto = c.hora_fin ? c.hora_fin.substring(0, 5) : '';
+        const rangoHorario = hIniCorto && hFinCorto ? ` [${hIniCorto} - ${hFinCorto}]` : '';
+
         let tituloLabel = 'Cita';
         if (c.tipo_sesion === 'Grupal') {
-          tituloLabel = `👥 ${c.nombre_grupo || 'Grupal'}`;
+          tituloLabel = `👥 ${c.nombre_grupo || 'Grupal'}${rangoHorario}`;
         } else {
           const emp = empresarios.find(e => e.id === Number(c.empresario_id || c.invitado_id));
-          tituloLabel = `👤 ${emp?.nombre_completo?.split(' ')[0] || 'Individual'}`;
+          const nombreEmp = emp?.nombre_completo?.split(' ')[0] || 'Individual';
+          tituloLabel = `👤 ${nombreEmp}${rangoHorario}`;
         }
 
         return {
@@ -270,8 +276,8 @@ export default function Calendario({ usuarioId }) {
         borderRadius: '6px',
         border: 'none',
         fontWeight: 'bold',
-        fontSize: '0.78rem',
-        padding: '3px 8px',
+        fontSize: '0.75rem',
+        padding: '3px 6px',
         boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
       }
     };
@@ -341,7 +347,6 @@ export default function Calendario({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      {/* Inyección de Estilos para Colorear la Barra de Navegación de RBC */}
       <style>{`
         .rbc-btn-group button {
           background-color: #FFFFFF !important;

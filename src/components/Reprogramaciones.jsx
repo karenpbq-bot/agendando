@@ -8,15 +8,12 @@ export default function Reprogramaciones({ usuarioId }) {
   const [empresarios, setEmpresarios] = useState([]);
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
   
-  // Opciones de rango
   const [rangoDias, setRangoDias] = useState(7);
   const [horariosAgrupadosPorDia, setHorariosAgrupadosPorDia] = useState({});
   const [diasAbiertos, setDiasAbiertos] = useState({});
   const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
 
-  // Campo opcional de enlace de reunión
   const [linkZoom, setLinkZoom] = useState('');
-
   const [mensaje, setMensaje] = useState('');
   const [cargando, setCargando] = useState(false);
 
@@ -33,6 +30,7 @@ export default function Reprogramaciones({ usuarioId }) {
       const { data: dataEmp } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol');
+      if (dataEmp) setEmpresarios(dataEmp);
 
       const { data: dataCanceladas } = await supabase
         .from('agd_citas')
@@ -218,7 +216,7 @@ export default function Reprogramaciones({ usuarioId }) {
     setMensaje('');
 
     try {
-      const tieneLink = linkSesion && linkSesion.trim() !== '';
+      const tieneLink = linkZoom && linkZoom.trim() !== '';
 
       const { error } = await supabase
         .from('agd_citas')
@@ -226,8 +224,8 @@ export default function Reprogramaciones({ usuarioId }) {
           fecha_cita: horarioSeleccionado.fecha,
           hora_inicio: horarioSeleccionado.horaInicio,
           hora_fin: horarioSeleccionado.horaFin,
-          link_zoom: tieneLink ? linkSesion.trim() : null,
-          estado: 'reservado' // REGLA: Toda nueva cita o reprogramación nace en estado reservado a la espera de confirmación
+          link_zoom: tieneLink ? linkZoom.trim() : null,
+          estado: 'reservado' // Nace como reservado en espera de confirmación
         })
         .eq('id', citaSeleccionada.id);
 
@@ -423,14 +421,11 @@ const estilos = {
   input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
   ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
   
-  /* SIN RESTRICCIÓN DE ALTURA: EXPANSIÓN LIBRE HACIA ABAJO */
   contenedorTarjetasDias: { display: 'flex', flexDirection: 'column', gap: '12px' },
   tarjetaDia: { border: '1px solid #00A89F', borderRadius: '8px', backgroundColor: '#FFF', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' },
   tarjetaDiaHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: '#E0F2F1', borderBottom: '1px solid #00A89F', cursor: 'pointer', userSelect: 'none' },
   tarjetaDiaTitulo: { fontSize: '0.85rem', fontWeight: 'bold', color: '#004D40' },
   tarjetaDiaBadge: { fontSize: '0.7rem', color: '#00796B', fontWeight: 'bold', backgroundColor: '#FFF', padding: '2px 6px', borderRadius: '4px', border: '1px solid #B2DFDB' },
-  
-  /* SIN MAX-HEIGHT NI OVERFLOW-Y: SE EXPANDE LIBREMENTE */
   tarjetaDiaBody: { padding: '12px', backgroundColor: '#FFF' },
   
   gridSlots: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px' },

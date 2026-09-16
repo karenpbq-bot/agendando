@@ -5,68 +5,67 @@ import { supabase } from '../supabaseClient';
 export default function Reprogramaciones({ usuarioId }) {
   const [canceladas, setCanceladas] = useState([]);
   const [enCurso, setEnCurso] = useState([]);
+  const [empresarios, setEmpresarios] = useState([]);
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
   
-  // Estados para la generación dinámica de horarios
+  // Opciones de rango
   const [rangoDias, setRangoDias] = useState(7); // 7 o 30 días
   const [horariosLibres, setHorariosLibres] = useState([]);
   const [horarioSeleccionado, setHorarioSeleccionado] = useState(null);
-  
-  const [linkSesion, setLinkSesion] = useState('');
+
+  // Campos del formulario de gestión (iguales a Gestionar Cita)
+  const [estadoCita, setEstadoCita] = useState('confirmado');
+  const [tipoSession, setTipoSession] = useState('Individual');
+  const [empresarioId, setEmpresarioId] = useState('');
+  const [nombreGrupo, setNombreGrupo] = useState('');
+  const [linkZoom, setLinkZoom] = useState('');
+
   const [mensaje, setMensaje] = useState('');
   const [cargando, setCargando] = useState(false);
 
   useEffect(() => {
     if (usuarioId) {
-      cargarListadosReprogramacion();
+      cargarDatosIniciales();
     }
   }, [usuarioId]);
 
-  const cargarListadosReprogramacion = async () => {
+  const cargarDatosIniciales = async () => {
     try {
       const chairIdNum = Number(usuarioId);
 
-      // 1. Obtener citas canceladas
-      const { data: dataCanceladas, error: errC } = await supabase
+      // 1. Cargar lista de empresarios / invitados
+      const { data: dataEmp } = await supabase
+        .from('usuarios')
+        .select('id, nombre_completo, telefono, email, rol');
+      if (dataEmp) setEmpresarios(dataEmp);
+
+      // 2. Obtener citas canceladas
+      const { data: dataCanceladas } = await supabase
         .from('agd_citas')
         .select('*')
         .eq('chair_id', chairIdNum)
         .ilike('estado', 'cancelado');
 
-      if (!errC && dataCanceladas) {
-        const conUsuarios = await Promise.all(dataCanceladas.map(async (cita) => {
-          if (cita.empresario_id) {
-            const { data: userDat } = await supabase
-              .from('usuarios')
-              .select('nombre_completo, email, telefono')
-              .eq('id', cita.empresario_id)
-              .maybeSingle();
-            return { ...cita, usuarios: userDat };
-          }
-          return { ...cita, usuarios: null };
-        }));
+      if (dataCanceladas) {
+        const conUsuarios = dataCanceladas.map((cita) => {
+          const emp = dataEmp?.find(e => e.id === Number(cita.empresario_id));
+          return { ...cita, usuarios: emp || null };
+        });
         setCanceladas(conUsuarios);
       }
 
-      // 2. Obtener reprogramaciones en curso
-      const { data: dataEnCurso, error: errEC } = await supabase
+      // 3. Obtener reprogramaciones en curso
+      const { data: dataEnCurso } = await supabase
         .from('agd_citas')
         .select('*')
         .eq('chair_id', chairIdNum)
         .ilike('estado', 'Propuesta_Reprogramacion');
 
-      if (!errEC && dataEnCurso) {
-        const conUsuariosEC = await Promise.all(dataEnCurso.map(async (cita) => {
-          if (cita.empresario_id) {
-            const { data: userDat } = await supabase
-              .from('usuarios')
-              .select('nombre_completo, email, telefono')
-              .eq('id', cita.empresario_id)
-              .maybeSingle();
-            return { ...cita, usuarios: userDat };
-          }
-          return { ...cita, usuarios: null };
-        }));
+      if (dataEnCurso) {
+        const conUsuariosEC = dataEnCurso.map((cita) => {
+          const emp = dataEmp?.find(e => e.id === Number(cita.empresario_id));
+          return { ...cita, usuarios: emp || null };
+        });
         setEnCurso(conUsuariosEC);
       }
 
@@ -75,13 +74,12 @@ export default function Reprogramaciones({ usuarioId }) {
     }
   };
 
-  // Generar espacios libres analizando el cronograma real del Chair
+  // Calcular espacios libres analizando el cronograma real del Chair
   const calcularEspaciosLibres = async (diasRango, citaObj) => {
     try {
       setCargando(true);
       const chairIdNum = Number(usuarioId);
 
-      // 1. Obtener configuración de jornada
       const { data: configData } = await supabase
         .from('agd_configuracion_chair')
         .select('jornada_inicio, jornada_fin')
@@ -91,20 +89,17 @@ export default function Reprogramaciones({ usuarioId }) {
       const jornadaInicio = configData?.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30';
       const jornadaFin = configData?.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30';
 
-      // 2. Obtener restricciones del Chair
       const { data: restData } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
         .eq('usuario_id', chairIdNum);
 
-      // 3. Obtener citas activas (no canceladas) para evitar solapes
       const { data: citasActivas } = await supabase
         .from('agd_citas')
         .select('*')
         .eq('chair_id', chairIdNum)
         .not('estado', 'ilike', 'cancelado');
 
-      // Calcular duración de la cita original o usar 45 mins por defecto
       let duracionMinutos = 45;
       if (citaObj && citaObj.hora_inicio && citaObj.hora_fin) {
         const [h1, m1] = citaObj.hora_inicio.split(':').map(Number);
@@ -113,7 +108,6 @@ export default function Reprogramaciones({ usuarioId }) {
         if (duracionMinutos <= 0) duracionMinutos = 45;
       }
 
-      // Algoritmo de generación de huecos libres
       const slotsDisponibles = [];
       const hoy = dayjs();
 
@@ -121,7 +115,6 @@ export default function Reprogramaciones({ usuarioId }) {
         const fechaActual = hoy.add(i, 'day');
         const fechaStr = fechaActual.format('YYYY-MM-DD');
 
-        // Verificar si el día entero está bloqueado
         const restDia = restData?.find(r => r.fecha_especifica?.substring(0, 10) === fechaStr);
         if (restDia && restDia.bloqueado_todo_el_dia) continue;
 
@@ -137,7 +130,6 @@ export default function Reprogramaciones({ usuarioId }) {
           const slotFinCursor = cursor.add(duracionMinutos, 'minute');
           const slotFinStr = slotFinCursor.format('HH:mm');
 
-          // Validar tramos restringidos parciales
           let restringido = false;
           if (restDia) {
             const tramos = [
@@ -162,7 +154,6 @@ export default function Reprogramaciones({ usuarioId }) {
             }
           }
 
-          // Validar solape con citas activas
           if (!restringido) {
             const aMin = (h) => { const [hh, mm] = h.split(':').map(Number); return hh * 60 + mm; };
             const sIniM = aMin(slotIniStr);
@@ -171,7 +162,7 @@ export default function Reprogramaciones({ usuarioId }) {
             const solapaCita = citasDelDia.some(c => {
               const cIniM = aMin(c.hora_inicio.substring(0, 5));
               const cFinM = aMin(c.hora_fin.substring(0, 5));
-              return sIniM < cFinM && sFinM > cIniM;
+              return sIniM < cFinM && sFinM > cFinM;
             });
 
             if (!solapaCita) {
@@ -184,7 +175,7 @@ export default function Reprogramaciones({ usuarioId }) {
             }
           }
 
-          cursor = cursor.add(30, 'minute'); // Salto de 30 minutos entre slots
+          cursor = cursor.add(30, 'minute');
         }
       }
 
@@ -200,7 +191,11 @@ export default function Reprogramaciones({ usuarioId }) {
     setCitaSeleccionada(cita);
     setMensaje('');
     setHorarioSeleccionado(null);
-    setLinkSesion('');
+    setLinkZoom(cita.link_zoom || '');
+    setTipoSession(cita.tipo_sesion || 'Individual');
+    setEmpresarioId(cita.empresario_id || '');
+    setNombreGrupo(cita.nombre_grupo || '');
+    setEstadoCita('confirmado');
     await calcularEspaciosLibres(dias, cita);
   };
 
@@ -223,7 +218,8 @@ export default function Reprogramaciones({ usuarioId }) {
 
     try {
       const tieneLink = linkSesion && linkSesion.trim() !== '';
-      const nuevoEstado = tieneLink ? 'confirmado' : 'Propuesta_Reprogramacion';
+      // Si el enlace es opcional y no se llena, queda como "Propuesta_Reprogramacion"
+      const nuevoEstado = tieneLink ? (estadoCita || 'confirmado') : 'Propuesta_Reprogramacion';
 
       const { error } = await supabase
         .from('agd_citas')
@@ -231,6 +227,9 @@ export default function Reprogramaciones({ usuarioId }) {
           fecha_cita: horarioSeleccionado.fecha,
           hora_inicio: horarioSeleccionado.horaInicio,
           hora_fin: horarioSeleccionado.horaFin,
+          tipo_sesion: tipoSession,
+          empresario_id: tipoSession === 'Individual' ? Number(empresarioId) : null,
+          nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
           link_zoom: tieneLink ? linkSesion.trim() : null,
           estado: nuevoEstado
         })
@@ -241,12 +240,12 @@ export default function Reprogramaciones({ usuarioId }) {
       setMensaje(
         tieneLink 
           ? '¡Cita reprogramada y confirmada con éxito!' 
-          : 'Propuesta enviada. La cita se movió a "Reprogramaciones en curso".'
+          : 'Propuesta enviada sin enlace. La cita pasó a "Reprogramaciones en curso".'
       );
 
       setCitaSeleccionada(null);
       setHorariosLibres([]);
-      cargarListadosReprogramacion();
+      cargarDatosIniciales();
     } catch (err) {
       setMensaje('Error al procesar la reprogramación: ' + err.message);
     } finally {
@@ -298,19 +297,72 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
         </div>
 
-        {/* Columna 2: Selección de Nuevo Horario con Opciones 7 y 30 días */}
+        {/* Columna 2: Formulario Completo de Gestión para la Nueva Cita */}
         <div style={estilos.columna}>
           <div style={estilos.cardSeccion}>
-            <h3 style={estilos.subSubTitulo}>Selección de Nuevo Horario</h3>
+            <h3 style={estilos.subSubTitulo}>Gestión de Reprogramación</h3>
             {!citaSeleccionada ? (
-              <p style={estilos.textoVacio}>Selecciona una cita cancelada de la izquierda para ver tus horarios libres.</p>
+              <p style={estilos.textoVacio}>Selecciona una cita cancelada de la izquierda para configurar su nueva programación.</p>
             ) : (
               <form onSubmit={enviarPropuestaReprogramacion} style={estilos.formulario}>
                 <p style={estilos.infoSeleccion}>
                   Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>
                 </p>
 
-                {/* Botones de Rango (7 y 30 días) */}
+                <div style={estilos.grupoInput}>
+                  <label style={estilos.label}>Estado de la Sesión</label>
+                  <select 
+                    value={estadoCita} 
+                    onChange={(e) => setEstadoCita(e.target.value)}
+                    style={{...estilos.input, fontWeight: 'bold'}}
+                  >
+                    <option value="confirmado">Confirmado / Activo</option>
+                    <option value="reservado">Reservado</option>
+                  </select>
+                </div>
+
+                <div style={estilos.grupoInput}>
+                  <label style={estilos.label}>Tipo de Sesión</label>
+                  <select 
+                    value={tipoSession} 
+                    onChange={(e) => setTipoSession(e.target.value)}
+                    style={estilos.input}
+                  >
+                    <option value="Individual">Individual (Azul Profesional)</option>
+                    <option value="Grupal">Grupal (Verde Petróleo)</option>
+                  </select>
+                </div>
+
+                {tipoSession === 'Individual' ? (
+                  <div style={estilos.grupoInput}>
+                    <label style={estilos.label}>Seleccionar Invitado / Empresario</label>
+                    <select 
+                      value={empresarioId} 
+                      onChange={(e) => setEmpresarioId(e.target.value)}
+                      style={estilos.input}
+                      required
+                    >
+                      <option value="">Seleccione...</option>
+                      {empresarios.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.nombre_completo} ({emp.rol})</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div style={estilos.grupoInput}>
+                    <label style={estilos.label}>Nombre del Grupo / Directorio</label>
+                    <input 
+                      type="text"
+                      value={nombreGrupo}
+                      onChange={(e) => setNombreGrupo(e.target.value)}
+                      placeholder="Ej. Directorio A"
+                      style={estilos.input}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Botones de Rango de Días */}
                 <div style={estilos.filaBotonesRango}>
                   <button 
                     type="button" 
@@ -329,9 +381,9 @@ export default function Reprogramaciones({ usuarioId }) {
                 </div>
 
                 <div style={estilos.grupoInput}>
-                  <label style={estilos.label}>Espacios Libres Disponibles:</label>
+                  <label style={estilos.label}>Seleccionar Espacio Libre en tu Agenda:</label>
                   {cargando ? (
-                    <p style={estilos.textoVacio}>Calculando espacios libres...</p>
+                    <p style={estilos.textoVacio}>Buscando espacios libres...</p>
                   ) : horariosLibres.length === 0 ? (
                     <p style={estilos.textoVacio}>No hay espacios libres en este rango.</p>
                   ) : (
@@ -354,18 +406,19 @@ export default function Reprogramaciones({ usuarioId }) {
                 </div>
 
                 <div style={estilos.grupoInput}>
-                  <label style={estilos.label}>Enlace de Sesión (Opcional)</label>
+                  <label style={estilos.label}>Link de Reunión (Zoom / Meet) - <i>Opcional</i></label>
                   <input 
                     type="url" 
-                    value={linkSesion}
-                    onChange={(e) => setLinkSesion(e.target.value)}
+                    value={linkZoom}
+                    onChange={(e) => setLinkZoom(e.target.value)}
                     placeholder="https://zoom.us/j/..."
                     style={estilos.input}
                   />
+                  <span style={estilos.ayudaInput}>Si no se llena este campo, la cita quedará en "Reprogramaciones en curso".</span>
                 </div>
 
                 <button type="submit" disabled={cargando || !horarioSeleccionado} style={estilos.botonPrimario}>
-                  {cargando ? 'Procesando...' : 'Confirmar Nueva Cita'}
+                  {cargando ? 'Procesando...' : 'Confirmar Reprogramación'}
                 </button>
               </form>
             )}
@@ -391,16 +444,17 @@ const estilos = {
   badgeEspera: { fontSize: '0.65rem', backgroundColor: '#FF8F00', color: '#FFF', padding: '3px 6px', borderRadius: '4px', fontWeight: 'bold' },
   botonAccion: { padding: '5px 8px', borderRadius: '4px', border: 'none', background: '#00A89F', color: '#FFF', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
   
-  filaBotonesRango: { display: 'flex', gap: '8px', marginBottom: '10px' },
-  btnRangoActivo: { flex: 1, padding: '7px', borderRadius: '6px', border: 'none', background: '#00796B', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
-  btnRangoInactivo: { flex: 1, padding: '7px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', color: '#64748B', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  filaBotonesRango: { display: 'flex', gap: '8px', marginBottom: '8px' },
+  btnRangoActivo: { flex: 1, padding: '6px', borderRadius: '6px', border: 'none', background: '#00796B', color: '#FFF', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
+  btnRangoInactivo: { flex: 1, padding: '6px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', color: '#64748B', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' },
 
   formulario: { display: 'flex', flexDirection: 'column', gap: '10px' },
   infoSeleccion: { fontSize: '0.8rem', color: '#00796B', margin: '0 0 5px 0', backgroundColor: '#E0F2F1', padding: '6px', borderRadius: '4px' },
   grupoInput: { display: 'flex', flexDirection: 'column', gap: '3px', textAlign: 'left' },
   label: { fontSize: '0.7rem', fontWeight: 'bold', color: '#444' },
   input: { padding: '7px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' },
-  listaHorarios: { maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' },
-  itemHorario: { padding: '8px', borderRadius: '6px', border: '1px solid #E0E0E0', fontSize: '0.75rem', cursor: 'pointer', fontWeight: '500' },
+  ayudaInput: { fontSize: '0.65rem', color: '#666', marginTop: '2px' },
+  listaHorarios: { maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' },
+  itemHorario: { padding: '7px', borderRadius: '6px', border: '1px solid #E0E0E0', fontSize: '0.75rem', cursor: 'pointer', fontWeight: '500' },
   botonPrimario: { padding: '9px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
 };

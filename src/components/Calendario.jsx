@@ -145,23 +145,29 @@ export default function Calendario({ usuarioId }) {
 
       if (dataRest) setRestricciones(dataRest);
 
-      // Cargar citas del Chair (excluyendo las canceladas para que liberen horario)
+      // Cargar citas del Chair (compatible con IDs numéricos)
       const { data: dataCitas, error: errCitas } = await supabase
         .from('agd_citas')
-        .select('*, usuarios(nombre_completo, telefono, email)')
-        .eq('chair_id', usuarioId);
+        .select('*, usuarios!agd_citas_empresario_id_fkey(nombre_completo, telefono, email)');
 
       if (errCitas) {
-        console.error('Error cargando citas:', errCitas.message);
+        // Fallback si la relación foreign key tiene otro nombre
+        const { data: dataCitasSimple } = await supabase
+          .from('agd_citas')
+          .select('*')
+          .eq('chair_id', usuarioId);
+        
+        if (dataCitasSimple) setCitas(dataCitasSimple);
       } else if (dataCitas) {
-        setCitas(dataCitas);
+        // Filtramos por el chair_id actual de manera estricta
+        const citasFiltradas = dataCitas.filter(c => Number(c.chair_id) === Number(usuarioId));
+        setCitas(citasFiltradas);
       }
     } catch (err) {
       console.error('Error general cargando datos de Supabase:', err);
     }
   };
 
-  // Función para determinar si el bloque de 5 min está disponible o bloqueado por citas/restricciones
   const esDisponibleCincoMin = (fecha, minInicioSeg, minFinSeg) => {
     const aMinutos = (strHora) => {
       if (!strHora) return null;
@@ -176,7 +182,7 @@ export default function Calendario({ usuarioId }) {
       return false; 
     }
 
-    // 1. Revisar si hay una CITA ACTIVA (no cancelada) en este horario
+    // Revisar cita activa en este segmento
     const citaActivaEnEsteMinuto = citas.some(c => {
       if (c.fecha_cita !== fecha || c.estado === 'cancelado') return false;
       const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
@@ -186,9 +192,8 @@ export default function Calendario({ usuarioId }) {
       return minInicioSeg < minFinC && minFinSeg > minIniC;
     });
 
-    if (citaActivaEnEsteMinuto) return false; // Bloqueado porque hay cita activa
+    if (citaActivaEnEsteMinuto) return false;
 
-    // 2. Revisar restricciones del Chair
     const restriccionDia = restricciones.find(r => {
       if (!r.fecha_especifica) return false;
       return r.fecha_especifica.substring(0, 10) === fecha;
@@ -264,7 +269,6 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // 1. Guardar Cita
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
@@ -273,7 +277,8 @@ export default function Calendario({ usuarioId }) {
       if (citaExistenteId) {
         const { error } = await supabase.from('agd_citas')
           .update({
-            empresario_id: empresarioId || null,
+            chair_id: Number(usuarioId),
+            empresario_id: empresarioId ? Number(empresarioId) : null,
             hora_inicio: horaInicio,
             hora_fin: horaFin,
             tipo_sesion: tipoSession,
@@ -298,8 +303,8 @@ export default function Calendario({ usuarioId }) {
         }
 
         const payloads = fechasAGuardar.map(fecha => ({
-          chair_id: usuarioId,
-          empresario_id: empresarioId || null,
+          chair_id: Number(usuarioId),
+          empresario_id: empresarioId ? Number(empresarioId) : null,
           fecha_cita: fecha,
           hora_inicio: horaInicio,
           hora_fin: horaFin,
@@ -322,7 +327,6 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // 2. Enviar por WhatsApp
   const enviarPorWhatsApp = () => {
     const empresObj = empresarios.find(e => e.id == empresarioId);
     if (!empresObj || !empresObj.telefono) {
@@ -333,7 +337,6 @@ export default function Calendario({ usuarioId }) {
     window.open(`https://wa.me/${empresObj.telefono.replace(/\+/g, '')}?text=${textoWs}`, '_blank');
   };
 
-  // 3. Enviar por Correo
   const enviarPorCorreo = () => {
     const empresObj = empresarios.find(e => e.id == empresarioId);
     if (!empresObj || !empresObj.email) {
@@ -346,8 +349,7 @@ export default function Calendario({ usuarioId }) {
   };
 
   const estilosEscala = {
-    fontSize: vistaEscala === 'trimestre' ? '0.4rem' : '0.65rem',
-    minWidth: vistaEscala === 'semana' ? '120px' : (vistaEscala === 'trimestre' ? '22px' : '65px'),
+    minWidth: vistaEscala === 'semana' ? '130px' : (vistaEscala === 'trimestre' ? '30px' : '75px'),
   };
 
   return (
@@ -396,8 +398,11 @@ export default function Calendario({ usuarioId }) {
         <span><b style={{color: '#D32F2F'}}>■</b> Cancelado / Bloqueado</span>
       </div>
 
+      {/* Contenedor del Cronograma con Scroll Sincronizado y Cabeceras Fijas */}
       <div style={estilos.gridCalendarioContainer}>
         <div style={estilos.gridBodyScroll}>
+          
+          {/* Fila de Encabezados de Días (Sticky Top) */}
           <div style={{ ...estilos.gridHeaderRow, gridTemplateColumns: `70px repeat(${diasSemanaMes.length}, ${estilosEscala.minWidth})` }}>
             <div style={estilos.headerEsquina}>Hora</div>
             {diasSemanaMes.map(d => (
@@ -407,6 +412,7 @@ export default function Calendario({ usuarioId }) {
             ))}
           </div>
 
+          {/* Filas de Horas */}
           {horasDelDia.map((horaBase, indexH) => {
             const minBase = indexH * 60;
 
@@ -426,7 +432,7 @@ export default function Calendario({ usuarioId }) {
 
                         // Buscar cita existente en este segmento de 5 minutos
                         const citaEncontrada = citas.find(c => {
-                          if (c.fecha_cita !== d.fecha) return false;
+                          if (c.fecha_cita !== d.fecha || c.estado === 'cancelado') return false;
                           const [hIniC, mIniC] = c.hora_inicio.split(':').map(Number);
                           const minIniC = hIniC * 60 + (mIniC || 0);
                           const [hFinC, mFinC] = c.hora_fin.split(':').map(Number);
@@ -439,15 +445,15 @@ export default function Calendario({ usuarioId }) {
                         let estiloSubSegmento = { ...estilos.subSegmentoPlano };
                         let etiquetaTexto = '';
 
-                        if (citaEncontrada && citaEncontrada.estado !== 'cancelado') {
-                          // Si es grupal -> Verde (#C8E6C9), si es individual -> Celeste (#B3E5FC)
+                        if (citaEncontrada) {
                           if (citaEncontrada.tipo_sesion === 'Grupal') {
                             estiloSubSegmento.backgroundColor = '#C8E6C9';
                             if (mOffset === 0) etiquetaTexto = `👥 ${citaEncontrada.nombre_grupo || 'Grupal'}`;
                           } else {
                             estiloSubSegmento.backgroundColor = '#B3E5FC';
                             if (mOffset === 0) {
-                              const nombreEmp = citaEncontrada.usuarios?.nombre_completo?.split(' ')[0] || 'Individual';
+                              const empAsociado = empresarios.find(e => e.id === citaAsociado(citaEncontrada));
+                              const nombreEmp = empAsociado?.nombre_completo?.split(' ')[0] || 'Individual';
                               etiquetaTexto = `👤 ${nombreEmp}`;
                             }
                           }
@@ -593,7 +599,6 @@ export default function Calendario({ usuarioId }) {
 
               {mensaje && <p style={estilos.mensajeFeedback}>{mensaje}</p>}
 
-              {/* Los 3 Botones Independientes */}
               <div style={estilos.contenedorBotonesAccion}>
                 <button type="submit" style={estilos.botonGuardarPrincipal}>
                   💾 Guardar / Actualizar Cita
@@ -618,6 +623,11 @@ export default function Calendario({ usuarioId }) {
   );
 }
 
+// Función auxiliar para leer el ID del invitado independientemente de la propiedad
+function citaAsociado(c) {
+  return c.empresario_id || c.invitado_id || null;
+}
+
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
   controlesSuperiores: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', flexWrap: 'wrap', backgroundColor: '#FFF', padding: '6px 8px', borderRadius: '8px', border: '1px solid #EAEAEA' },
@@ -630,17 +640,17 @@ const estilos = {
   mensajeFeedback: { fontSize: '0.75rem', color: '#00796B', backgroundColor: '#E0F2F1', padding: '6px', borderRadius: '4px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '10px', fontSize: '0.65rem', marginBottom: '8px', alignItems: 'center', flexWrap: 'wrap' },
   
-  // Contenedor con Scroll Profesional y Sticky Headers (Vertical y Horizontal)
-  gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA' },
+  // Contenedor y Scroll con Sticky Sincronizado
+  gridCalendarioContainer: { backgroundColor: '#FFF', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA', overflow: 'hidden' },
   gridBodyScroll: { maxHeight: '620px', overflowY: 'auto', overflowX: 'auto', position: 'relative' },
   
   gridHeaderRow: { display: 'grid', backgroundColor: '#00A89F', color: '#FFF', position: 'sticky', top: 0, zIndex: 10 },
-  headerEsquina: { padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 11, borderRight: '1px solid rgba(255,255,255,0.2)' },
+  headerEsquina: { padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', position: 'sticky', left: 0, backgroundColor: '#00A89F', zIndex: 15, borderRight: '1px solid rgba(255,255,255,0.2)' },
   headerDia: { padding: '8px 4px', textAlign: 'center', fontSize: '0.7rem' },
   numDia: { fontWeight: 'bold' },
   
   gridRow: { display: 'grid', borderBottom: '1px solid #EEE' },
-  colHoraFija: { padding: '4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 5, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  colHoraFija: { padding: '4px', textAlign: 'center', fontWeight: 'bold', color: '#555', backgroundColor: '#FAFAFA', fontSize: '0.75rem', position: 'sticky', left: 0, zIndex: 8, borderRight: '1px solid #DDD', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   
   celdaContenedorPlana: { height: '48px', borderRight: '1px solid #EEE', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
   subSegmentoPlano: { flex: 1, width: '100%', boxSizing: 'border-box', borderBottom: '0.5px solid rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden' },

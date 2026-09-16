@@ -38,7 +38,6 @@ export default function Calendario({ usuarioId }) {
 
   const cargarDatosSupabase = async () => {
     try {
-      // 1. Configuración de jornada
       const { data: configData } = await supabase
         .from('agd_configuracion_chair')
         .select('jornada_inicio, jornada_fin')
@@ -52,20 +51,17 @@ export default function Calendario({ usuarioId }) {
         });
       }
 
-      // 2. Lista de empresarios / invitados
       const { data: dataEmp } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol');
       if (dataEmp) setEmpresarios(dataEmp);
 
-      // 3. Citas del Chair
       const { data: dataCitas } = await supabase
         .from('agd_citas')
         .select('*')
         .eq('chair_id', usuarioId);
       if (dataCitas) setCitas(dataCitas);
 
-      // 4. Restricciones de disponibilidad
       const { data: dataRest } = await supabase
         .from('agd_restricciones_disponibilidad')
         .select('*')
@@ -77,7 +73,6 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // Convertir citas a formato de eventos
   const eventosCalendario = useMemo(() => {
     return citas
       .filter(c => c.estado !== 'cancelado')
@@ -103,16 +98,56 @@ export default function Calendario({ usuarioId }) {
       });
   }, [citas, empresarios]);
 
-  // Manejar clic en un slot o día
+  const esHorarioRestringido = (fechaStr, hInicio, hFin) => {
+    const aMinutos = (hStr) => {
+      const [h, m] = hStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const iniMin = aMinutos(hInicio);
+    const finMin = aMinutos(hFin);
+    const jornadaIniMin = aMinutos(jornadaChair.inicio);
+    const jornadaFinMin = aMinutos(jornadaChair.fin);
+
+    if (iniMin < jornadaIniMin || finMin > jornadaFinMin) {
+      return 'Fuera de la jornada laboral configurada.';
+    }
+
+    const restDia = restricciones.find(r => r.fecha_especifica?.substring(0, 10) === fechaStr);
+    if (!restDia) return null;
+
+    if (restDia.bloqueado_todo_el_dia) {
+      return 'Este día se encuentra totalmente bloqueado por restricciones.';
+    }
+
+    const tramos = [
+      { i: restDia.tramo_1_inicio, f: restDia.tramo_1_fin },
+      { i: restDia.tramo_2_inicio, f: restDia.tramo_2_fin },
+      { i: restDia.tramo_3_inicio, f: restDia.tramo_3_fin },
+      { i: restDia.tramo_4_inicio, f: restDia.tramo_4_fin },
+    ];
+
+    for (let t of tramos) {
+      if (t.i && t.f) {
+        const tIniMin = aMinutos(t.i.substring(0, 5));
+        const tFinMin = aMinutos(t.f.substring(0, 5));
+
+        if (iniMin < tFinMin && finMin > tIniMin) {
+          return `El horario interfiere con un tramo restringido (${t.i.substring(0, 5)} - ${t.f.substring(0, 5)}).`;
+        }
+      }
+    }
+
+    return null;
+  };
+
   const alSeleccionarSlot = ({ start, end, action }) => {
-    // Si está en vista Mes y hace clic en un día, llevarlo a la vista Día de esa fecha
     if (vistaActual === 'month' && action === 'click') {
       setFechaActualCalendario(start);
       setVistaActual('day');
       return;
     }
 
-    // En vistas Semana o Día, abrir modal para agendar
     const anio = start.getFullYear();
     const mes = String(start.getMonth() + 1).padStart(2, '0');
     const dia = String(start.getDate()).padStart(2, '0');
@@ -120,6 +155,12 @@ export default function Calendario({ usuarioId }) {
 
     const horaIniStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
     const horaFinStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
+
+    const motivoRestriccion = esHorarioRestringido(fechaFormateada, horaIniStr, horaFinStr);
+    if (motivoRestriccion) {
+      alert(`⚠️ No es posible agendar en este horario:\n${motivoRestriccion}`);
+      return;
+    }
 
     setFechaSeleccionadaStr(fechaFormateada);
     setCitaExistenteId(null);
@@ -149,12 +190,16 @@ export default function Calendario({ usuarioId }) {
     setModalAbierto(true);
   };
 
-  // Validar solapes antes de guardar
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
 
-    // Comprobar si ya existe otra cita activa en el mismo rango de horario para ese día
+    const motivoRestriccion = esHorarioRestringido(fechaSeleccionadaStr, horaInicio, horaFin);
+    if (motivoRestriccion) {
+      setMensaje(`⚠️ Bloqueado: ${motivoRestriccion}`);
+      return;
+    }
+
     const aMinutos = (hStr) => {
       const [h, m] = hStr.split(':').map(Number);
       return h * 60 + m;
@@ -165,7 +210,7 @@ export default function Calendario({ usuarioId }) {
 
     const haySolape = citas.some(c => {
       if (c.estado === 'cancelado' || c.fecha_cita !== fechaSeleccionadaStr) return false;
-      if (citaExistenteId && c.id === citaExistenteId) return false; // Ignorar la misma cita al editar
+      if (citaExistenteId && c.id === citaExistenteId) return false;
 
       const cIniMin = aMinutos(c.hora_inicio);
       const cFinMin = aMinutos(c.hora_fin);
@@ -174,7 +219,7 @@ export default function Calendario({ usuarioId }) {
     });
 
     if (haySolape) {
-      setMensaje('⚠️ Error: Ya existe una cita agendada en este mismo horario. Evita cruces.');
+      setMensaje('⚠️ Error: Ya existe otra cita agendada en este mismo horario.');
       return;
     }
 
@@ -214,16 +259,16 @@ export default function Calendario({ usuarioId }) {
       style: {
         backgroundColor: esGrupal ? '#00796B' : '#0288D1',
         color: '#FFF',
-        borderRadius: '4px',
+        borderRadius: '6px',
         border: 'none',
         fontWeight: 'bold',
-        fontSize: '0.75rem',
-        padding: '1px 4px'
+        fontSize: '0.78rem',
+        padding: '3px 8px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
       }
     };
   };
 
-  // Resaltar horas fuera de la jornada o restringidas en la vista de tiempo
   const slotPropGetter = (date) => {
     const horaStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     const anio = date.getFullYear();
@@ -231,15 +276,15 @@ export default function Calendario({ usuarioId }) {
     const dia = String(date.getDate()).padStart(2, '0');
     const fechaStr = `${anio}-${mes}-${dia}`;
 
-    // Verificar si el día entero o la hora está restringida
     const restDia = restricciones.find(r => r.fecha_especifica?.substring(0, 10) === fechaStr);
     const bloqueadoDia = restDia?.bloqueado_todo_el_dia;
 
     if (bloqueadoDia || horaStr < jornadaChair.inicio || horaStr >= jornadaChair.fin) {
       return {
         style: {
-          backgroundColor: '#F1F3F5',
-          opacity: 0.7
+          backgroundColor: '#F8F9FA',
+          backgroundImage: 'repeating-linear-gradient(45deg, #E9ECEF, #E9ECEF 10px, #F8F9FA 10px, #F8F9FA 20px)',
+          opacity: 0.85
         }
       };
     }
@@ -269,12 +314,18 @@ export default function Calendario({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      <div style={estilos.leyenda}>
-        <span><b style={{color: '#00796B'}}>■</b> Cita Grupal (Verde Petróleo)</span>
-        <span><b style={{color: '#0288D1'}}>■</b> Cita Individual (Azul Profesional)</span>
-        <span>💡 <i>Haz clic en un día del mes para ver su detalle en la vista Día.</i></span>
+      {/* Tarjeta de Encabezado / Leyenda Colorida */}
+      <div style={estilos.tarjetaHeader}>
+        <div style={estilos.tituloSeccion}>📅 Cronograma de Sesiones y Mentorías</div>
+        <div style={estilos.leyenda}>
+          <span style={estilos.badgeLeyendaGrupal}><b style={{color: '#004D40'}}>■</b> Cita Grupal</span>
+          <span style={estilos.badgeLeyendaIndividual}><b style={{color: '#01579B'}}>■</b> Cita Individual</span>
+          <span style={estilos.badgeLeyendaRestriccion}><b style={{color: '#6C757D'}}>■</b> Horario Restringido</span>
+        </div>
+        <div style={estilos.instruccion}>💡 <i>Haz clic en cualquier día del mes para gestionarlo en la vista detallada por Hora/Día.</i></div>
       </div>
 
+      {/* Contenedor Principal del Calendario */}
       <div style={estilos.calendarioWrapper}>
         <Calendar
           localizer={localizer}
@@ -291,11 +342,11 @@ export default function Calendario({ usuarioId }) {
           onSelectEvent={alSeleccionarEvento}
           eventPropGetter={eventPropGetter}
           slotPropGetter={slotPropGetter}
-          min={new Date(1970, 0, 1, 7, 0, 0)} // Hora mínima visible en grid (07:00)
-          max={new Date(1970, 0, 1, 23, 0, 0)} // Hora máxima visible en grid (23:00)
+          min={new Date(1970, 0, 1, 0, 0, 0)}
+          max={new Date(1970, 0, 1, 23, 59, 59)}
           messages={{
-            next: 'Siguiente',
-            previous: 'Anterior',
+            next: 'Siguiente ❯',
+            previous: '❮ Anterior',
             today: 'Hoy',
             month: 'Mes',
             week: 'Semana',
@@ -309,10 +360,14 @@ export default function Calendario({ usuarioId }) {
         />
       </div>
 
+      {/* Modal Estilizado */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
-            <h3 style={estilos.modalTitulo}>Gestionar Cita ({fechaSeleccionadaStr})</h3>
+            <div style={estilos.modalHeaderDecorado}>
+              <h3 style={estilos.modalTitulo}>✨ Gestionar Cita</h3>
+              <span style={estilos.modalSubFecha}>{fechaSeleccionadaStr}</span>
+            </div>
             
             <form onSubmit={guardarCita} style={estilos.formularioModal}>
               <div style={estilos.grupoInput}>
@@ -320,7 +375,7 @@ export default function Calendario({ usuarioId }) {
                 <select 
                   value={estadoCita} 
                   onChange={(e) => setEstadoCita(e.target.value)}
-                  style={{...estilos.input, fontWeight: 'bold'}}
+                  style={{...estilos.input, fontWeight: 'bold', color: estadoCita === 'cancelado' ? '#D32F2F' : '#00796B'}}
                 >
                   <option value="confirmado">Confirmado / Activo</option>
                   <option value="reservado">Reservado</option>
@@ -335,8 +390,8 @@ export default function Calendario({ usuarioId }) {
                   onChange={(e) => setTipoSession(e.target.value)}
                   style={estilos.input}
                 >
-                  <option value="Individual">Individual (Azul)</option>
-                  <option value="Grupal">Grupal (Verde)</option>
+                  <option value="Individual">Individual (Azul Profesional)</option>
+                  <option value="Grupal">Grupal (Verde Petróleo)</option>
                 </select>
               </div>
 
@@ -431,24 +486,35 @@ export default function Calendario({ usuarioId }) {
 }
 
 const estilos = {
-  contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
-  leyenda: { display: 'flex', justifyContent: 'center', gap: '15px', fontSize: '0.8rem', marginBottom: '12px', alignItems: 'center', flexWrap: 'wrap' },
-  calendarioWrapper: { height: 680, backgroundColor: '#FFF', padding: '15px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #EAEAEA' },
+  contenedor: { padding: '15px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F4F6F8' },
   
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
-  modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '420px', boxSizing: 'border-box' },
-  modalTitulo: { fontSize: '0.95rem', color: '#333', marginBottom: '12px', textAlign: 'center' },
-  formularioModal: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  grupoInput: { display: 'flex', flexDirection: 'column', gap: '3px', textAlign: 'left' },
-  label: { fontSize: '0.7rem', fontWeight: 'bold', color: '#444' },
-  input: { padding: '7px', borderRadius: '6px', border: '1px solid #CCC', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' },
-  filaHorarios: { display: 'flex', gap: '8px' },
-  mensajeFeedback: { fontSize: '0.75rem', color: '#00796B', backgroundColor: '#E0F2F1', padding: '6px', borderRadius: '4px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold' },
+  tarjetaHeader: { backgroundColor: '#FFFFFF', padding: '15px 20px', borderRadius: '12px', boxShadow: '0 3px 10px rgba(0,0,0,0.04)', marginBottom: '15px', borderLeft: '5px solid #00A89F' },
+  tituloSeccion: { fontSize: '1.1rem', fontWeight: 'bold', color: '#2C3E50', marginBottom: '8px' },
+  leyenda: { display: 'flex', gap: '12px', fontSize: '0.8rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '6px' },
+  badgeLeyendaGrupal: { backgroundColor: '#E0F2F1', padding: '4px 8px', borderRadius: '6px', color: '#004D40', fontWeight: 'bold' },
+  badgeLeyendaIndividual: { backgroundColor: '#E1F5FE', padding: '4px 8px', borderRadius: '6px', color: '#01579B', fontWeight: 'bold' },
+  badgeLeyendaRestriccion: { backgroundColor: '#F1F3F5', padding: '4px 8px', borderRadius: '6px', color: '#495057', fontWeight: 'bold' },
+  instruccion: { fontSize: '0.75rem', color: '#6C757D' },
+
+  calendarioWrapper: { height: 700, backgroundColor: '#FFFFFF', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', border: '1px solid #E4E7EB' },
   
-  contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' },
-  botonGuardarPrincipal: { width: '100%', padding: '10px', borderRadius: '6px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
-  filaAccionesSecundarias: { display: 'flex', gap: '6px' },
-  botonWs: { flex: 1, padding: '8px', borderRadius: '6px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
-  botonCorreo: { flex: 1, padding: '8px', borderRadius: '6px', border: 'none', background: '#0288D1', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
-  botonCerrarModal: { width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #CCC', background: '#FFF', color: '#666', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '2px' }
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
+  modalContenido: { backgroundColor: '#FFF', padding: '25px', borderRadius: '14px', width: '100%', maxWidth: '440px', boxSizing: 'border-box', boxShadow: '0 10px 25px rgba(0,0,0,0.15)' },
+  modalHeaderDecorado: { borderBottom: '2px solid #E0F2F1', paddingBottom: '10px', marginBottom: '15px', textAlign: 'center' },
+  modalTitulo: { fontSize: '1.05rem', color: '#00796B', fontWeight: 'bold', margin: '0 0 4px 0' },
+  modalSubFecha: { fontSize: '0.8rem', color: '#555', fontWeight: 'bold' },
+
+  formularioModal: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  grupoInput: { display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' },
+  label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#34495E' },
+  input: { padding: '9px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box', backgroundColor: '#FAFAFA' },
+  filaHorarios: { display: 'flex', gap: '10px' },
+  mensajeFeedback: { fontSize: '0.78rem', color: '#C62828', backgroundColor: '#FFEBEE', padding: '8px', borderRadius: '6px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold', border: '1px solid #FFCDD2' },
+  
+  contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' },
+  botonGuardarPrincipal: { width: '100%', padding: '11px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,168,159,0.3)' },
+  filaAccionesSecundarias: { display: 'flex', gap: '8px' },
+  botonWs: { flex: 1, padding: '9px', borderRadius: '8px', border: 'none', background: '#25D366', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 5px rgba(37,211,102,0.3)' },
+  botonCorreo: { flex: 1, padding: '9px', borderRadius: '8px', border: 'none', background: '#0288D1', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 5px rgba(2,136,209,0.3)' },
+  botonCerrarModal: { width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #CFD8DC', background: '#FFFFFF', color: '#607D8B', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '4px' }
 };

@@ -228,7 +228,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
     }
   };
 
-  // NUEVA FUNCIÓN: Cambiar estado a Confirmado desde el botón de la Agenda
   const confirmarCitaDirecta = async (citaId) => {
     try {
       const { error } = await supabase
@@ -286,22 +285,21 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         tipo_sesion: tipoSession,
         nombre_grupo: tipoSession === 'Grupal' ? nombreGrupo : null,
         link_zoom: linkZoom,
-        // REGLA: Toda cita nueva u editada nace o se mantiene por defecto como 'reservado' si es nueva, respetando su estado si ya estaba confirmada
       };
 
       if (citaExistenteId) {
         const { error } = await supabase.from('agd_citas').update(payload).eq('id', citaExistenteId);
         if (error) throw error;
-        setMensaje('¡Cita actualizada correctamente!');
+        setMensaje('✅ ¡Cita actualizada con éxito!');
       } else {
-        payload.estado = 'reservado'; // Por defecto toda nueva cita es 'reservado'
+        payload.estado = 'reservado'; // Toda cita nueva nace en estado reservado
         const { error } = await supabase.from('agd_citas').insert([payload]);
         if (error) throw error;
-        setMensaje('¡Cita creada con estado Reservado!');
+        setMensaje('✅ ¡Cita guardada con éxito (Reservado)!');
       }
 
       await cargarDatosSupabase();
-      setTimeout(() => setModalAbierto(false), 1000);
+      // NOTA: Ya no cerramos la ventana automáticamente para que puedas usar los botones de WhatsApp y Correo
     } catch (err) {
       setMensaje('Error al guardar: ' + err.message);
     }
@@ -470,7 +468,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
           />
         </div>
       ) : (
-        /* Vista de Agenda Interactiva con Botón Confirmar y Cancelar */
+        /* Vista de Agenda con Botones Confirmar y Cancelar */
         <div style={estilos.agendaContainer}>
           <h3 style={estilos.agendaTitulo}>Listado y Gestión de Citas</h3>
           {citas.length === 0 ? (
@@ -515,7 +513,6 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
                         ✏️ Editar
                       </button>
 
-                      {/* Botón Confirmar exclusivo si está en estado reservado */}
                       {esReservado && (
                         <button 
                           onClick={() => confirmarCitaDirecta(c.id)}
@@ -542,7 +539,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
         </div>
       )}
 
-      {/* Modal General de Creación / Edición (SIN selector de Estado) */}
+      {/* Modal General de Creación / Edición */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -642,7 +639,7 @@ export default function Calendario({ usuarioId, onActualizarMetricas }) {
 
               <div style={estilos.contenedorBotonesAccion}>
                 <button type="submit" style={estilos.botonGuardarPrincipal}>
-                  💾 Guardar / Actualizar Cita
+                  💾 Guardar cita
                 </button>
                 <div style={estilos.filaAccionesSecundarias}>
                   <button type="button" onClick={enviarPorWhatsApp} style={estilos.botonWs}>
@@ -695,7 +692,7 @@ const estilos = {
   label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#34495E' },
   input: { padding: '9px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box', backgroundColor: '#FAFAFA' },
   filaHorarios: { display: 'flex', gap: '10px' },
-  mensajeFeedback: { fontSize: '0.78rem', color: '#C62828', backgroundColor: '#FFEBEE', padding: '8px', borderRadius: '6px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold', border: '1px solid #FFCDD2' },
+  mensajeFeedback: { fontSize: '0.78rem', color: '#00796B', backgroundColor: '#E0F2F1', padding: '8px', borderRadius: '6px', textAlign: 'center', margin: '4px 0', fontWeight: 'bold', border: '1px solid #B2DFDB' },
   
   contenedorBotonesAccion: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' },
   botonGuardarPrincipal: { width: '100%', padding: '11px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,168,159,0.3)' },

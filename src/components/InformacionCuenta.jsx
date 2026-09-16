@@ -29,7 +29,6 @@ export default function InformacionCuenta({ usuarioId }) {
       if (errUser) throw errUser;
       setDatosUsuario(userDat);
 
-      // Verificamos de forma robusta si es Chair (Anfitrión)
       const esChair = userDat.rol === 'Chair' || userDat.rol === 'ANFITRION';
 
       // 2. Cargar Grupos Creados si es Anfitrión
@@ -43,7 +42,7 @@ export default function InformacionCuenta({ usuarioId }) {
         if (!errGc) setGruposCreados(gruposChair || []);
       }
 
-      // 3. Cargar Grupos a los que pertenece por invitación (Tabla puente)
+      // 3. Cargar Grupos a los que pertenece por invitación
       const { data: gruposMiembro, error: errGm } = await supabase
         .from('agd_grupo_miembros')
         .select('agd_grupos(id, nombre_grupo, codigo_invitacion)')
@@ -54,23 +53,23 @@ export default function InformacionCuenta({ usuarioId }) {
         setGruposInscritos(formateados);
       }
 
-      // 4. Obtener Citas Pendientes
-      const { data: pendData } = await supabase
+      // 4. Obtener Citas Pendientes / Confirmadas (Usando chair_id o empresario_id)
+      const { data: pendData, error: errPend } = await supabase
         .from('agd_citas')
         .select('*')
-        .or(`chair_id.eq.${usuarioId},invitado_id.eq.${usuarioId}`)
-        .in('estado', ['Registrada', 'Confirmada', 'Propuesta_Reprogramacion']);
+        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`)
+        .not('estado', 'ilike', 'cancelado');
       
-      setCitasPendientes(pendData || []);
+      if (!errPend) setCitasPendientes(pendData || []);
 
       // 5. Obtener Citas Canceladas
-      const { data: cancData } = await supabase
+      const { data: cancData, error: errCanc } = await supabase
         .from('agd_citas')
         .select('*')
-        .or(`chair_id.eq.${usuarioId},invitado_id.eq.${usuarioId}`)
-        .eq('estado', 'Cancelada');
+        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`)
+        .ilike('estado', 'cancelado');
 
-      setCitasCanceladas(cancData || []);
+      if (!errCanc) setCitasCanceladas(cancData || []);
 
     } catch (err) {
       console.error('Error cargando la información de la cuenta:', err);
@@ -99,7 +98,6 @@ export default function InformacionCuenta({ usuarioId }) {
           <p style={estilos.textoDetalle}><b>Correo:</b> {datosUsuario?.email || datosUsuario?.correo}</p>
         </div>
 
-        {/* Vigencia de suscripción (SOLO PARA ANFITRIONES) */}
         {esChair && (
           <div style={estilos.cardInfo}>
             <h3 style={estilos.subSubTitulo}>Vigencia de Suscripción</h3>
@@ -113,7 +111,7 @@ export default function InformacionCuenta({ usuarioId }) {
         )}
       </div>
 
-      {/* Sección 2.1: Grupos Creados (Exclusivo para Anfitriones) */}
+      {/* Sección 2.1: Grupos Creados */}
       {esChair && (
         <div style={estilos.cardSeccionCompleta}>
           <h3 style={estilos.subSubTitulo}>Tus Grupos Creados ({gruposCreados.length})</h3>
@@ -155,14 +153,15 @@ export default function InformacionCuenta({ usuarioId }) {
       {/* Sección 3: Citas Pendientes y Canceladas */}
       <div style={estilos.gridCitas}>
         <div style={estilos.cardSeccion}>
-          <h3 style={estilos.subSubTitulo}>Citas Pendientes ({citasPendientes.length})</h3>
+          <h3 style={estilos.subSubTitulo}>Citas Pendientes / Confirmadas ({citasPendientes.length})</h3>
           {citasPendientes.length === 0 ? (
             <p style={estilos.textoVacio}>No tienes citas pendientes o confirmadas.</p>
           ) : (
             citasPendientes.map(c => (
               <div key={c.id} style={estilos.itemCita}>
-                <p style={estilos.textoCita}>Estado: <b>{c.estado}</b></p>
-                <p style={estilos.textoCitaDetalle}>Fecha: {c.fecha_propuesta_nueva ? new Date(c.fecha_propuesta_nueva).toLocaleString() : 'Programada'}</p>
+                <p style={estilos.textoCita}>Tipo: <b>{c.tipo_sesion || 'Individual'}</b> {c.nombre_grupo ? `- ${c.nombre_grupo}` : ''}</p>
+                <p style={estilos.textoCitaDetalle}>📅 Fecha: {c.fecha_cita} | ⏰ {c.hora_inicio} - {c.hora_fin}</p>
+                <p style={{...estilos.textoCitaDetalle, color: '#00796B', fontWeight: 'bold', marginTop: '2px'}}>Estado: {c.estado?.toUpperCase()}</p>
               </div>
             ))
           )}
@@ -175,8 +174,9 @@ export default function InformacionCuenta({ usuarioId }) {
           ) : (
             citasCanceladas.map(c => (
               <div key={c.id} style={{...estilos.itemCita, backgroundColor: '#FFEBEE', borderColor: '#FFCDD2'}}>
-                <p style={estilos.textoCita}>Estado: <b style={{color: '#D32F2F'}}>Cancelada</b></p>
-                <p style={estilos.textoCitaDetalle}>ID Cita: {c.id.substring(0,8)}...</p>
+                <p style={estilos.textoCita}>Tipo: <b>{c.tipo_sesion || 'Individual'}</b></p>
+                <p style={estilos.textoCitaDetalle}>📅 Fecha: {c.fecha_cita} | ⏰ {c.hora_inicio} - {c.hora_fin}</p>
+                <p style={{...estilos.textoCitaDetalle, color: '#D32F2F', fontWeight: 'bold', marginTop: '2px'}}>Estado: CANCELADA</p>
               </div>
             ))
           )}

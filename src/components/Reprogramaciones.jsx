@@ -207,11 +207,10 @@ export default function Reprogramaciones({ usuarioId }) {
     }));
   };
 
-  // Al hacer clic en un slot libre, abre INMEDIATAMENTE el modal
   const abrirModalSlot = (slot) => {
     setSlotElegido(slot);
-    setMantenerLinkAnterior(false); // Switch apagado por defecto
-    setLinkZoom(''); // Limpio para exigir el nuevo link salvo que prendan el switch
+    setMantenerLinkAnterior(false);
+    setLinkZoom('');
     setModalAbierto(true);
   };
 
@@ -315,7 +314,7 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
 
           <p style={estilos.infoSeleccion}>
-            Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>. Haz clic directamente en un horario disponible para abrir el formulario de confirmación.
+            Reprogramando cita para: <b>{citaSeleccionada.usuarios?.nombre_completo || 'Invitado'}</b>. Haz clic directamente en un horario disponible para abrir el formulario.
           </p>
 
           <div style={estilos.filaBotonesRango}>
@@ -366,7 +365,7 @@ export default function Reprogramaciones({ usuarioId }) {
                                 key={idx} 
                                 onClick={() => abrirModalSlot(h)}
                                 style={estilos.itemSlotHora}
-                                title="Haz clic para abrir la ventana de confirmación"
+                                title="Haz clic para abrir la ventana de generación"
                               >
                                 {h.label}
                               </div>
@@ -383,12 +382,12 @@ export default function Reprogramaciones({ usuarioId }) {
         </div>
       )}
 
-      {/* Ventana Emergente (Modal) Directa */}
+      {/* Ventana Emergente (Modal) con textos actualizados */}
       {modalAbierto && slotElegido && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
             <div style={estilos.modalHeaderDecorado}>
-              <h3 style={estilos.modalTitulo}>✨ Confirmar Reprogramación</h3>
+              <h3 style={estilos.modalTitulo}>✨ Generar Reprogramación</h3>
               <span style={estilos.modalSubFecha}>{slotElegido.fecha} | {slotElegido.label}</span>
             </div>
 
@@ -437,10 +436,10 @@ export default function Reprogramaciones({ usuarioId }) {
 
               <div style={estilos.contenedorBotonesAccion}>
                 <button type="submit" disabled={cargando} style={estilos.botonGuardarPrincipal}>
-                  {cargando ? 'Procesando...' : '💾 Confirmar Reprogramación'}
+                  {cargando ? 'Procesando...' : '💾 Generar Reprogramación'}
                 </button>
                 <button type="button" onClick={() => setModalAbierto(false)} style={estilos.botonCerrarModal}>
-                  Desistir / Cambiar Fecha
+                  Cancelar
                 </button>
               </div>
             </form>

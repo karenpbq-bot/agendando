@@ -19,19 +19,21 @@ export default function Reprogramaciones({ usuarioId }) {
 
   const cargarListadosReprogramacion = async () => {
     try {
+      // 1. Cargar citas canceladas (soporta minúsculas/mayúsculas y chair_id/empresario_id)
       const { data: dataCanceladas, error: errC } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, email, telefono)')
-        .eq('chair_id', usuarioId)
-        .eq('estado', 'Cancelada');
+        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`)
+        .ilike('estado', 'cancelado');
 
       if (!errC && dataCanceladas) setCanceladas(dataCanceladas);
 
+      // 2. Cargar reprogramaciones en curso
       const { data: dataEnCurso, error: errEC } = await supabase
         .from('agd_citas')
         .select('*, usuarios(nombre_completo, email, telefono)')
-        .eq('chair_id', usuarioId)
-        .eq('estado', 'Propuesta_Reprogramacion');
+        .or(`chair_id.eq.${usuarioId},empresario_id.eq.${usuarioId}`)
+        .ilike('estado', 'Propuesta_Reprogramacion');
 
       if (!errEC && dataEnCurso) setEnCurso(dataEnCurso);
 
@@ -103,8 +105,6 @@ export default function Reprogramaciones({ usuarioId }) {
 
   return (
     <div style={estilos.contenedor}>
-      {/* Título duplicado eliminado para optimizar espacio */}
-
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
 
       <div style={estilos.gridContenedor}>
@@ -119,7 +119,7 @@ export default function Reprogramaciones({ usuarioId }) {
                 <div key={c.id} style={estilos.itemLista}>
                   <div>
                     <p style={estilos.textoItem}><b>Invitado:</b> {c.usuarios?.nombre_completo || 'N/D'}</p>
-                    <p style={estilos.textoItemDetalle}>Fecha Original: {new Date(c.created_at).toLocaleDateString()}</p>
+                    <p style={estilos.textoItemDetalle}>Fecha Original: {c.fecha_cita || new Date(c.created_at).toLocaleDateString()}</p>
                   </div>
                   <button onClick={() => seleccionarParaReprogramar(c)} style={estilos.botonAccion}>
                     Reprogramar

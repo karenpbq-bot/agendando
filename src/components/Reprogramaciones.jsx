@@ -211,27 +211,29 @@ export default function Reprogramaciones({ usuarioId }) {
       setMensaje('Debes seleccionar un horario de la lista.');
       return;
     }
+    if (!linkZoom || linkZoom.trim() === '') {
+      setMensaje('Debes verificar o ingresar el enlace de la reunión (Zoom / Meet).');
+      return;
+    }
 
     setCargando(true);
     setMensaje('');
 
     try {
-      const tieneLink = linkZoom && linkZoom.trim() !== '';
-
       const { error } = await supabase
         .from('agd_citas')
         .update({
           fecha_cita: horarioSeleccionado.fecha,
           hora_inicio: horarioSeleccionado.horaInicio,
           hora_fin: horarioSeleccionado.horaFin,
-          link_zoom: tieneLink ? linkZoom.trim() : null,
+          link_zoom: linkZoom.trim(),
           estado: 'reservado' // Nace como reservado en espera de confirmación
         })
         .eq('id', citaSeleccionada.id);
 
       if (error) throw error;
 
-      setMensaje('¡Propuesta enviada! Cita reprogramada con éxito (Reservado).');
+      setMensaje('¡Cita reprogramada con éxito (Reservado)!');
 
       setCitaSeleccionada(null);
       setHorariosAgrupadosPorDia({});
@@ -371,15 +373,16 @@ export default function Reprogramaciones({ usuarioId }) {
             </div>
 
             <div style={estilos.grupoInput}>
-              <label style={estilos.label}>Link de Reunión (Zoom / Meet) para la nueva cita:</label>
+              <label style={estilos.label}>Link de Reunión (Zoom / Meet) para la nueva cita: <span style={{color: '#DC2626'}}>*</span></label>
               <input 
                 type="url" 
                 value={linkZoom}
                 onChange={(e) => setLinkZoom(e.target.value)}
                 placeholder="https://zoom.us/j/..."
                 style={estilos.input}
+                required
               />
-              <span style={estilos.ayudaInput}>Se ha precargado el enlace anterior. Modifícalo si requieres uno nuevo para esta reprogramación.</span>
+              <span style={estilos.ayudaInput}>Se ha precargado el enlace anterior. Revísalo o cámbialo antes de confirmar la reprogramación.</span>
             </div>
 
             <button type="submit" disabled={cargando || !horarioSeleccionado} style={estilos.botonPrimario}>

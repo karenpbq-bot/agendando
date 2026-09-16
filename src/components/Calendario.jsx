@@ -8,15 +8,17 @@ import { supabase } from '../supabaseClient';
 dayjs.locale('es');
 const localizer = dayjsLocalizer(dayjs);
 
-export default function Calendario({ usuarioId }) {
+export default function Calendario({ usuarioId, onActualizarMetricas }) {
   const [citas, setCitas] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
   const [restricciones, setRestricciones] = useState([]);
   const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30' });
   
+  const [modoVista, setModoVista] = useState('calendario'); // 'calendario' o 'agenda'
   const [vistaActual, setVistaActual] = useState('month');
   const [fechaActualCalendario, setFechaActualCalendario] = useState(new Date());
 
+  // Modal principal de agendamiento/edición
   const [modalAbierto, setModalAbierto] = useState(false);
   const [citaExistenteId, setCitaExistenteId] = useState(null);
   const [fechaSeleccionadaStr, setFechaSeleccionadaStr] = useState('');
@@ -29,6 +31,14 @@ export default function Calendario({ usuarioId }) {
   const [linkZoom, setLinkZoom] = useState('');
   const [estadoCita, setEstadoCita] = useState('confirmado');
   const [mensaje, setMensaje] = useState('');
+
+  // Modal específico para opciones de Cancelación / Reprogramación
+  const [modalCancelacionAbierto, setModalCancelacionAbierto] = useState(false);
+  const [citaSeleccionadaParaCancelar, setCitaSeleccionadaParaCancelar] = useState(null);
+  const [accionCancelacion, setAccionCancelacion] = useState('solo_cancelar'); // 'solo_cancelar' o 'reprogramar'
+  const [nuevaFechaReprogramacion, setNuevaFechaReprogramacion] = useState('');
+  const [nuevaHoraInicio, setNuevaHoraInicio] = useState('09:00');
+  const [nuevaHoraFin, setNuevaHoraFin] = useState('09:45');
 
   useEffect(() => {
     if (usuarioId) {
@@ -60,7 +70,11 @@ export default function Calendario({ usuarioId }) {
         .from('agd_citas')
         .select('*')
         .eq('chair_id', usuarioId);
-      if (dataCitas) setCitas(dataCitas);
+      
+      if (dataCitas) {
+        setCitas(dataCitas);
+        if (onActualizarMetricas) calcularMetricas(dataCitas);
+      }
 
       const { data: dataRest } = await supabase
         .from('agd_restricciones_disponibilidad')
@@ -73,9 +87,16 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
+  const calcularMetricas = (listaCitas) => {
+    const confirmadas = listaCitas.filter(c => c.estado === 'confirmado' || c.estado === 'Confirmada').length;
+    const reservadas = listaCitas.filter(c => c.estado === 'reservado' || c.estado === 'Reservada').length;
+    const canceladas = listaCitas.filter(c => c.estado === 'cancelado' || c.estado === 'Cancelada').length;
+    onActualizarMetricas({ confirmadas, reservadas, canceladas });
+  };
+
   const eventosCalendario = useMemo(() => {
     return citas
-      .filter(c => c.estado !== 'cancelado')
+      .filter(c => c.estado !== 'cancelado' && c.estado !== 'Cancelada')
       .map(c => {
         const inicioDate = new Date(`${c.fecha_cita}T${c.hora_inicio}`);
         const finDate = new Date(`${c.fecha_cita}T${c.hora_fin}`);
@@ -83,8 +104,6 @@ export default function Calendario({ usuarioId }) {
         const hIniCorto = c.hora_inicio ? c.hora_inicio.substring(0, 5) : '';
         const hFinCorto = c.hora_fin ? c.hora_fin.substring(0, 5) : '';
         const rangoHorario = hIniCorto && hFinCorto ? ` [${hIniCorto} - ${hFinCorto}]` : '';
-        
-        // Indicador de estado visible en la vista Agenda y Mes/Semana/Día
         const estadoEtiqueta = c.estado ? ` (${c.estado.toUpperCase()})` : '';
 
         let tituloLabel = 'Cita';
@@ -147,7 +166,6 @@ export default function Calendario({ usuarioId }) {
         }
       }
     }
-
     return null;
   };
 
@@ -206,12 +224,64 @@ export default function Calendario({ usuarioId }) {
     setModalAbierto(true);
   };
 
+  // Abrir ventana de cancelación para una cita específica
+  const abrirModalCancelacion = (cita) => {
+    setCitaSeleccionadaParaCancelar(cita);
+    setAccionCancelacion('solo_cancelar');
+    setNuevaFechaReprogramacion(cita.fecha_cita);
+    setNuevaHoraInicio(cita.hora_inicio?.substring(0, 5) || '09:00');
+    setNuevaHoraFin(cita.hora_fin?.substring(0, 5) || '09:45');
+    setModalCancelacionAbierto(true);
+  };
+
+  // Procesar la decisión tomada en la ventana de cancelación
+  const procesarCancelacionOReprogramacion = async (e) => {
+    e.preventDefault();
+    if (!citaSeleccionadaParaCancelar) return;
+
+    try {
+      if (accionCancelacion === 'solo_cancelar') {
+        // 1. Simplemente cancelar (libera horario y cambia estado)
+        const { error } = await supabase
+          .from('agd_citas')
+          .update({ estado: 'cancelado' })
+          .eq('id', citaSeleccionadaParaCancelar.id);
+
+        if (error) throw error;
+      } else {
+        // 2. Enviar nueva fecha y hora (Reprogramar)
+        const motivo = esHorarioRestringido(nuevaFechaReprogramacion, nuevaHoraInicio, nuevaHoraFin);
+        if (motivo) {
+          alert(`⚠️ No se puede reprogramar a este horario:\n${motivo}`);
+          return;
+        }
+
+        const { error } = await supabase
+          .from('agd_citas')
+          .update({
+            fecha_cita: nuevaFechaReprogramacion,
+            hora_inicio: nuevaHoraInicio,
+            hora_fin: nuevaHoraFin,
+            estado: 'confirmado'
+          })
+          .eq('id', citaSeleccionadaParaCancelar.id);
+
+        if (error) throw error;
+      }
+
+      setModalCancelacionAbierto(false);
+      await cargarDatosSupabase();
+    } catch (err) {
+      alert('Error al procesar la solicitud: ' + err.message);
+    }
+  };
+
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
 
     const motivoRestriccion = esHorarioRestringido(fechaSeleccionadaStr, horaInicio, horaFin);
-    if (motivoRestriccion) {
+    if (motivoRestriccion && estadoCita !== 'cancelado') {
       setMensaje(`⚠️ Bloqueado: ${motivoRestriccion}`);
       return;
     }
@@ -225,7 +295,7 @@ export default function Calendario({ usuarioId }) {
     const nuevoFinMin = aMinutos(horaFin);
 
     const haySolape = citas.some(c => {
-      if (c.estado === 'cancelado' || c.fecha_cita !== fechaSeleccionadaStr) return false;
+      if (c.estado === 'cancelado' || c.estado === 'Cancelada' || c.fecha_cita !== fechaSeleccionadaStr) return false;
       if (citaExistenteId && c.id === citaExistenteId) return false;
 
       const cIniMin = aMinutos(c.hora_inicio);
@@ -234,7 +304,7 @@ export default function Calendario({ usuarioId }) {
       return nuevoIniMin < cFinMin && nuevoFinMin > cIniMin;
     });
 
-    if (haySolape) {
+    if (haySolape && estadoCita !== 'cancelado') {
       setMensaje('⚠️ Error: Ya existe otra cita agendada en este mismo horario.');
       return;
     }
@@ -379,43 +449,121 @@ export default function Calendario({ usuarioId }) {
         }
       `}</style>
 
-      {/* Contenedor Principal del Calendario (Leyenda y títulos eliminados) */}
-      <div style={estilos.calendarioWrapper}>
-        <Calendar
-          localizer={localizer}
-          events={eventosCalendario}
-          startAccessor="start"
-          endAccessor="end"
-          style={{ height: '100%' }}
-          selectable
-          view={vistaActual}
-          onView={(nuevaVista) => setVistaActual(nuevaVista)}
-          date={fechaActualCalendario}
-          onNavigate={(nuevaFecha) => setFechaActualCalendario(nuevaFecha)}
-          onSelectSlot={alSeleccionarSlot}
-          onSelectEvent={alSeleccionarEvento}
-          eventPropGetter={eventPropGetter}
-          slotPropGetter={slotPropGetter}
-          dayPropGetter={dayPropGetter}
-          min={new Date(1970, 0, 1, 0, 0, 0)}
-          max={new Date(1970, 0, 1, 23, 59, 59)}
-          scrollToTime={new Date(1970, 0, 1, 8, 0, 0)}
-          messages={{
-            next: 'Siguiente ❯',
-            previous: '❮ Anterior',
-            today: 'Hoy',
-            month: 'Mes',
-            week: 'Semana',
-            day: 'Día',
-            agenda: 'Agenda',
-            date: 'Fecha',
-            time: 'Hora',
-            event: 'Evento',
-            noEventsInRange: 'No hay citas registradas en este periodo.'
-          }}
-        />
+      {/* Selector de Vista Principal */}
+      <div style={estilos.barraModos}>
+        <button 
+          onClick={() => setModoVista('calendario')} 
+          style={modoVista === 'calendario' ? estilos.botonModoActivo : estilos.botonModoInactivo}
+        >
+          📅 Cronograma Visual
+        </button>
+        <button 
+          onClick={() => setModoVista('agenda')} 
+          style={modoVista === 'agenda' ? estilos.botonModoActivo : estilos.botonModoInactivo}
+        >
+          📋 Lista de Agenda y Cancelaciones
+        </button>
       </div>
 
+      {modoVista === 'calendario' ? (
+        <div style={estilos.calendarioWrapper}>
+          <Calendar
+            localizer={localizer}
+            events={eventosCalendario}
+            startAccessor="start"
+            endAccessor="end"
+            style={{ height: '100%' }}
+            selectable
+            view={vistaActual}
+            onView={(nuevaVista) => setVistaActual(nuevaVista)}
+            date={fechaActualCalendario}
+            onNavigate={(nuevaFecha) => setFechaActualCalendario(nuevaFecha)}
+            onSelectSlot={alSeleccionarSlot}
+            onSelectEvent={alSeleccionarEvento}
+            eventPropGetter={eventPropGetter}
+            slotPropGetter={slotPropGetter}
+            dayPropGetter={dayPropGetter}
+            min={new Date(1970, 0, 1, 0, 0, 0)}
+            max={new Date(1970, 0, 1, 23, 59, 59)}
+            scrollToTime={new Date(1970, 0, 1, 8, 0, 0)}
+            messages={{
+              next: 'Siguiente ❯',
+              previous: '❮ Anterior',
+              today: 'Hoy',
+              month: 'Mes',
+              week: 'Semana',
+              day: 'Día',
+              agenda: 'Agenda',
+              date: 'Fecha',
+              time: 'Hora',
+              event: 'Evento',
+              noEventsInRange: 'No hay citas registradas en este periodo.'
+            }}
+          />
+        </div>
+      ) : (
+        /* Vista de Agenda con opción de Cancelación */
+        <div style={estilos.agendaContainer}>
+          <h3 style={estilos.agendaTitulo}>Listado y Gestión de Citas</h3>
+          {citas.length === 0 ? (
+            <p style={estilos.textoVacio}>No hay citas registradas.</p>
+          ) : (
+            <div style={estilos.tablaAgenda}>
+              {citas.map(c => {
+                const emp = empresarios.find(e => e.id === Number(c.empresario_id || c.invitado_id));
+                const esCancelada = c.estado === 'cancelado' || c.estado === 'Cancelada';
+                return (
+                  <div key={c.id} style={{...estilos.filaCitaItem, opacity: esCancelada ? 0.6 : 1}}>
+                    <div>
+                      <p style={estilos.itemFechaHora}>📅 {c.fecha_cita} &nbsp;|&nbsp; ⏰ {c.hora_inicio?.substring(0,5)} - {c.hora_fin?.substring(0,5)}</p>
+                      <p style={estilos.itemDetalle}>
+                        <b>{c.tipo_sesion === 'Grupal' ? `👥 Grupo: ${c.nombre_grupo}` : `👤 Invitado: ${emp?.nombre_completo || 'Individual'}`}</b>
+                      </p>
+                      <span style={{
+                        ...estilos.badgeEstado, 
+                        backgroundColor: (c.estado === 'confirmado' || c.estado === 'Confirmada') ? '#E0F2F1' : (c.estado === 'reservado' || c.estado === 'Reservada') ? '#FFF9C4' : '#FFEBEE',
+                        color: (c.estado === 'confirmado' || c.estado === 'Confirmada') ? '#00796B' : (c.estado === 'reservado' || c.estado === 'Reservada') ? '#F57F17' : '#D32F2F'
+                      }}>
+                        {c.estado?.toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={estilos.grupoBotonesFila}>
+                      <button 
+                        onClick={() => {
+                          setCitaExistenteId(c.id);
+                          setFechaSeleccionadaStr(c.fecha_cita);
+                          setTipoSession(c.tipo_sesion || 'Individual');
+                          setEmpresarioId(c.empresario_id || c.invitado_id || '');
+                          setNombreGrupo(c.nombre_grupo || '');
+                          setHoraInicio(c.hora_inicio || '');
+                          setHoraFin(c.hora_fin || '');
+                          setLinkZoom(c.link_zoom || '');
+                          setEstadoCita(c.estado || 'confirmado');
+                          setMensaje('');
+                          setModalAbierto(true);
+                        }}
+                        style={estilos.botonEditar}
+                      >
+                        ✏️ Editar
+                      </button>
+                      {!esCancelada && (
+                        <button 
+                          onClick={() => abrirModalCancelacion(c)}
+                          style={estilos.botonCancelarDirecto}
+                        >
+                          ❌ Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal General de Creación / Edición */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -479,6 +627,17 @@ export default function Calendario({ usuarioId }) {
                 </div>
               )}
 
+              <div style={estilos.grupoInput}>
+                <label style={estilos.label}>Fecha de Cita</label>
+                <input 
+                  type="date" 
+                  value={fechaSeleccionadaStr} 
+                  onChange={(e) => setFechaSeleccionadaStr(e.target.value)} 
+                  style={estilos.input}
+                  required
+                />
+              </div>
+
               <div style={estilos.filaHorarios}>
                 <div style={estilos.grupoInput}>
                   <label style={estilos.label}>Hora Inicio</label>
@@ -536,14 +695,101 @@ export default function Calendario({ usuarioId }) {
           </div>
         </div>
       )}
+
+      {/* Modal Específico de Cancelación con Opciones (Reprogramar o Cancelar definitivo) */}
+      {modalCancelacionAbierto && (
+        <div style={estilos.modalOverlay}>
+          <div style={estilos.modalContenido}>
+            <div style={estilos.modalHeaderDecorado}>
+              <h3 style={{...estilos.modalTitulo, color: '#D32F2F'}}>❌ Gestionar Cancelación</h3>
+              <span style={estilos.modalSubFecha}>Elige una opción para esta cita</span>
+            </div>
+            
+            <form onSubmit={procesarCancelacionOReprogramacion} style={estilos.formularioModal}>
+              <div style={estilos.grupoInput}>
+                <label style={estilos.label}>¿Qué deseas hacer con la cita?</label>
+                <select 
+                  value={accionCancelacion} 
+                  onChange={(e) => setAccionCancelacion(e.target.value)}
+                  style={{...estilos.input, fontWeight: 'bold'}}
+                >
+                  <option value="solo_cancelar">Simplemente Cancelar (Liberar Horario)</option>
+                  <option value="reprogramar">Brindar una Nueva Fecha y Hora (Reprogramar)</option>
+                </select>
+              </div>
+
+              {accionCancelacion === 'reprogramar' && (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#F8F9FA', padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0'}}>
+                  <div style={estilos.grupoInput}>
+                    <label style={estilos.label}>Nueva Fecha</label>
+                    <input 
+                      type="date" 
+                      value={nuevaFechaReprogramacion} 
+                      onChange={(e) => setNuevaFechaReprogramacion(e.target.value)} 
+                      style={estilos.input}
+                      required
+                    />
+                  </div>
+                  <div style={estilos.filaHorarios}>
+                    <div style={estilos.grupoInput}>
+                      <label style={estilos.label}>Nueva Hora Inicio</label>
+                      <input 
+                        type="time" 
+                        value={nuevaHoraInicio} 
+                        onChange={(e) => setNuevaHoraInicio(e.target.value)} 
+                        style={estilos.input}
+                        required
+                      />
+                    </div>
+                    <div style={estilos.grupoInput}>
+                      <label style={estilos.label}>Nueva Hora Fin</label>
+                      <input 
+                        type="time" 
+                        value={nuevaHoraFin} 
+                        onChange={(e) => setNuevaHoraFin(e.target.value)} 
+                        style={estilos.input}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={estilos.contenedorBotonesAccion}>
+                <button type="submit" style={{...estilos.botonGuardarPrincipal, background: accionCancelacion === 'solo_cancelar' ? '#D32F2F' : '#00796B'}}>
+                  {accionCancelacion === 'solo_cancelar' ? 'Confirmar Cancelación' : 'Guardar Nueva Fecha y Hora'}
+                </button>
+                <button type="button" onClick={() => setModalCancelacionAbierto(false)} style={estilos.botonCerrarModal}>
+                  Volver / Cerrar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F4F6F8' },
-  calendarioWrapper: { height: 740, backgroundColor: '#FFFFFF', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', border: '1px solid #E4E7EB' },
+  barraModos: { display: 'flex', gap: '10px', marginBottom: '15px' },
+  botonModoActivo: { padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#00A89F', color: '#FFF', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' },
+  botonModoInactivo: { padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFF', color: '#64748B', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' },
   
+  calendarioWrapper: { height: 740, backgroundColor: '#FFFFFF', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', border: '1px solid #E4E7EB' },
+  agendaContainer: { backgroundColor: '#FFFFFF', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 15px rgba(0,0,0,0.06)', border: '1px solid #E4E7EB', minHeight: '500px' },
+  agendaTitulo: { fontSize: '1.05rem', color: '#2C3E50', marginBottom: '15px', borderBottom: '2px solid #00A89F', paddingBottom: '6px' },
+  tablaAgenda: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  filaCitaItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FAFAFA', padding: '12px 15px', borderRadius: '8px', border: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' },
+  itemFechaHora: { fontSize: '0.8rem', color: '#475569', margin: '0 0 4px 0', fontWeight: 'bold' },
+  itemDetalle: { fontSize: '0.85rem', color: '#1E293B', margin: '0 0 6px 0' },
+  badgeEstado: { padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' },
+  grupoBotonesFila: { display: 'flex', gap: '8px' },
+  botonEditar: { padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#0288D1', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  botonCancelarDirecto: { padding: '6px 12px', borderRadius: '6px', border: 'none', backgroundColor: '#D32F2F', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  textoVacio: { fontSize: '0.85rem', color: '#64748B', textAlign: 'center', padding: '30px' },
+
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '25px', borderRadius: '14px', width: '100%', maxWidth: '440px', boxSizing: 'border-box', boxShadow: '0 10px 25px rgba(0,0,0,0.15)' },
   modalHeaderDecorado: { borderBottom: '2px solid #E0F2F1', paddingBottom: '10px', marginBottom: '15px', textAlign: 'center' },

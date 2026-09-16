@@ -253,7 +253,6 @@ export default function Reprogramaciones({ usuarioId }) {
       {mensaje && <p style={estilos.mensajeGeneral}>{mensaje}</p>}
 
       {!citaSeleccionada ? (
-        /* VISTA PRINCIPAL: Bandejas apiladas con ancho completo */
         <div style={estilos.stackContenedor}>
           <div style={estilos.cardSeccion}>
             <h3 style={estilos.subSubTitulo}>Bandeja de Canceladas ({canceladas.length})</h3>
@@ -292,8 +291,8 @@ export default function Reprogramaciones({ usuarioId }) {
           </div>
         </div>
       ) : (
-        /* PANTALLA DEDICADA DE REPROGRAMACIÓN */
-        <div style={estilos.cardSeccion}>
+        /* PANTALLA DEDICADA DE REPROGRAMACIÓN AMPLIADA */
+        <div style={estilos.cardSeccionAmpliada}>
           <div style={estilos.headerPantallaReprogramacion}>
             <button onClick={() => setCitaSeleccionada(null)} style={estilos.botonVolver}>
               ❮ Volver a la Bandeja
@@ -384,15 +383,15 @@ export default function Reprogramaciones({ usuarioId }) {
               ) : horariosLibres.length === 0 ? (
                 <p style={estilos.textoVacio}>No hay espacios libres en este rango.</p>
               ) : (
-                <div style={estilos.listaHorarios}>
+                <div style={estilos.listaHorariosAmplia}>
                   {horariosLibres.map((h, idx) => (
                     <div 
                       key={idx} 
                       onClick={() => setHorarioSeleccionado(h)}
                       style={{
                         ...estilos.itemHorario,
-                        borderColor: horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio ? '#00A89F' : '#E0E0E0',
-                        backgroundColor: horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio ? '#E0F2F1' : '#FAFAFA'
+                        borderColor: horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio ? '#00A89F' : '#CBD5E1',
+                        backgroundColor: horarioSeleccionado?.fecha === h.fecha && horarioSeleccionado?.horaInicio === h.horaInicio ? '#E0F2F1' : '#FFFFFF'
                       }}
                     >
                       {h.label}
@@ -429,6 +428,7 @@ const estilos = {
   mensajeGeneral: { fontSize: '0.85rem', color: '#00A89F', textAlign: 'center', fontWeight: 'bold', margin: '6px 0' },
   stackContenedor: { display: 'flex', flexDirection: 'column', gap: '15px' },
   cardSeccion: { backgroundColor: '#FFF', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #EAEAEA', boxSizing: 'border-box', width: '100%' },
+  cardSeccionAmpliada: { backgroundColor: '#FFF', padding: '20px', borderRadius: '12px', boxShadow: '0 3px 12px rgba(0,0,0,0.06)', border: '1px solid #EAEAEA', boxSizing: 'border-box', width: '100%', minHeight: '650px' },
   subSubTitulo: { fontSize: '1rem', color: '#333', marginBottom: '12px', borderBottom: '2px solid #00A89F', paddingBottom: '6px' },
   textoVacio: { fontSize: '0.8rem', color: '#777', textAlign: 'center', padding: '15px' },
   itemLista: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', borderRadius: '8px', border: '1px solid #EEE', backgroundColor: '#FAFAFA', marginBottom: '8px', gap: '10px' },
@@ -439,19 +439,19 @@ const estilos = {
   botonAccion: { padding: '8px 12px', borderRadius: '6px', border: 'none', background: '#00A89F', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' },
   
   headerPantallaReprogramacion: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '2px solid #00A89F', paddingBottom: '8px', flexWrap: 'wrap', gap: '10px' },
-  botonVolver: { padding: '6px 12px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', color: '#334155', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
+  botonVolver: { padding: '8px 14px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', color: '#334155', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
 
-  filaBotonesRango: { display: 'flex', gap: '8px', marginBottom: '10px' },
-  btnRangoActivo: { flex: 1, padding: '8px', borderRadius: '6px', border: 'none', background: '#00796B', color: '#FFF', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
-  btnRangoInactivo: { flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF', color: '#64748B', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' },
+  filaBotonesRango: { display: 'flex', gap: '8px', marginBottom: '12px' },
+  btnRangoActivo: { flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#00796B', color: '#FFF', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
+  btnRangoInactivo: { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFF', color: '#64748B', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' },
 
-  formulario: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  infoSeleccion: { fontSize: '0.85rem', color: '#00796B', margin: '0 0 5px 0', backgroundColor: '#E0F2F1', padding: '8px', borderRadius: '6px' },
-  grupoInput: { display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left' },
-  label: { fontSize: '0.75rem', fontWeight: 'bold', color: '#444' },
-  input: { padding: '9px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' },
-  ayudaInput: { fontSize: '0.7rem', color: '#666', marginTop: '2px' },
-  listaHorarios: { maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' },
-  itemHorario: { padding: '10px', borderRadius: '8px', border: '1px solid #E0E0E0', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '500' },
-  botonPrimario: { padding: '12px', borderRadius: '8px', border: 'none', background: 'linear-gradient(90deg, #00A89F 0%, #88D84D 100%)', color: '#FFF', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '6px', width: '100%' }
+  formulario: { display: 'flex', flexDirection: 'column', gap: '14px' },
+  infoSeleccion: { fontSize: '0.85rem', color: '#00796B', margin: '0 0 5px 0', backgroundColor: '#E0F2F1', padding: '10px', borderRadius: '8px' },
+  grupoInput: { display: 'flex', flexDirection: 'column', gap: '5px', textAlign: 'left' },
+  label: { fontSize: '0.8rem', fontWeight: 'bold', color: '#334155' },
+  input: { padding: '10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' },
+  ayudaInput: { fontSize: '0.75rem', color: '#64748B', marginTop: '3px' },
+  listaHorariosAmplia: { maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' },
+  itemHorario: { padding: '12px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' },
+  botonPrimario: { padding: '14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #00A89F 0%, #00796B 100%)', color: '#FFF', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px', width: '100%', boxShadow: '0 4px 10px rgba(0,168,159,0.3)' }
 };

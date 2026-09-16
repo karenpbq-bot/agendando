@@ -11,7 +11,12 @@ const localizer = dayjsLocalizer(dayjs);
 export default function Calendario({ usuarioId }) {
   const [citas, setCitas] = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
+  const [restricciones, setRestricciones] = useState([]);
+  const [jornadaChair, setJornadaChair] = useState({ inicio: '08:30', fin: '22:30' });
   
+  const [vistaActual, setVistaActual] = useState('month');
+  const [fechaActualCalendario, setFechaActualCalendario] = useState(new Date());
+
   const [modalAbierto, setModalAbierto] = useState(false);
   const [citaExistenteId, setCitaExistenteId] = useState(null);
   const [fechaSeleccionadaStr, setFechaSeleccionadaStr] = useState('');
@@ -33,29 +38,49 @@ export default function Calendario({ usuarioId }) {
 
   const cargarDatosSupabase = async () => {
     try {
-      // 1. Cargar lista de invitados/empresarios
+      // 1. Configuración de jornada
+      const { data: configData } = await supabase
+        .from('agd_configuracion_chair')
+        .select('jornada_inicio, jornada_fin')
+        .eq('usuario_id', usuarioId)
+        .maybeSingle();
+
+      if (configData) {
+        setJornadaChair({
+          inicio: configData.jornada_inicio ? configData.jornada_inicio.substring(0, 5) : '08:30',
+          fin: configData.jornada_fin ? configData.jornada_fin.substring(0, 5) : '22:30'
+        });
+      }
+
+      // 2. Lista de empresarios / invitados
       const { data: dataEmp } = await supabase
         .from('usuarios')
         .select('id, nombre_completo, telefono, email, rol');
       if (dataEmp) setEmpresarios(dataEmp);
 
-      // 2. Cargar citas del Chair
-      const { data: dataCitas, error: errC } = await supabase
+      // 3. Citas del Chair
+      const { data: dataCitas } = await supabase
         .from('agd_citas')
         .select('*')
         .eq('chair_id', usuarioId);
-
-      if (errC) throw errC;
       if (dataCitas) setCitas(dataCitas);
+
+      // 4. Restricciones de disponibilidad
+      const { data: dataRest } = await supabase
+        .from('agd_restricciones_disponibilidad')
+        .select('*')
+        .eq('usuario_id', usuarioId);
+      if (dataRest) setRestricciones(dataRest);
+
     } catch (err) {
-      console.error('Error cargando calendario:', err);
+      console.error('Error cargando datos del calendario:', err);
     }
   };
 
-  // Convertir citas de Supabase al formato que exige react-big-calendar
+  // Convertir citas a formato de eventos
   const eventosCalendario = useMemo(() => {
     return citas
-      .filter(c => c.estado !== 'cancelado') // Las canceladas no se pintan (liberan horario)
+      .filter(c => c.estado !== 'cancelado')
       .map(c => {
         const inicioDate = new Date(`${c.fecha_cita}T${c.hora_inicio}`);
         const finDate = new Date(`${c.fecha_cita}T${c.hora_fin}`);
@@ -78,16 +103,23 @@ export default function Calendario({ usuarioId }) {
       });
   }, [citas, empresarios]);
 
-  // Manejar clic en un espacio vacío del calendario para crear cita
-  const alSeleccionarSlot = ({ start }) => {
+  // Manejar clic en un slot o día
+  const alSeleccionarSlot = ({ start, end, action }) => {
+    // Si está en vista Mes y hace clic en un día, llevarlo a la vista Día de esa fecha
+    if (vistaActual === 'month' && action === 'click') {
+      setFechaActualCalendario(start);
+      setVistaActual('day');
+      return;
+    }
+
+    // En vistas Semana o Día, abrir modal para agendar
     const anio = start.getFullYear();
     const mes = String(start.getMonth() + 1).padStart(2, '0');
     const dia = String(start.getDate()).padStart(2, '0');
     const fechaFormateada = `${anio}-${mes}-${dia}`;
 
     const horaIniStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
-    const finH = new Date(start.getTime() + 45 * 60000); // 45 min por defecto
-    const horaFinStr = `${String(finH.getHours()).padStart(2, '0')}:${String(finH.getMinutes()).padStart(2, '0')}`;
+    const horaFinStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
 
     setFechaSeleccionadaStr(fechaFormateada);
     setCitaExistenteId(null);
@@ -102,7 +134,6 @@ export default function Calendario({ usuarioId }) {
     setModalAbierto(true);
   };
 
-  // Manejar clic en una cita existente para editarla/cancelarla
   const alSeleccionarEvento = (evento) => {
     const c = evento.resource;
     setCitaExistenteId(c.id);
@@ -118,26 +149,34 @@ export default function Calendario({ usuarioId }) {
     setModalAbierto(true);
   };
 
-  // Asignar colores dinámicos (Verde para grupal, Celeste para individual)
-  const eventPropGetter = (event) => {
-    const esGrupal = event.resource.tipo_sesion === 'Grupal';
-    return {
-      style: {
-        backgroundColor: esGrupal ? '#C8E6C9' : '#B3E5FC',
-        color: '#004D40',
-        borderRadius: '6px',
-        border: 'none',
-        fontWeight: 'bold',
-        fontSize: '0.8rem',
-        padding: '2px 6px'
-      }
-    };
-  };
-
-  // Guardar o actualizar cita en Supabase
+  // Validar solapes antes de guardar
   const guardarCita = async (e) => {
     e.preventDefault();
     setMensaje('');
+
+    // Comprobar si ya existe otra cita activa en el mismo rango de horario para ese día
+    const aMinutos = (hStr) => {
+      const [h, m] = hStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const nuevoIniMin = aMinutos(horaInicio);
+    const nuevoFinMin = aMinutos(horaFin);
+
+    const haySolape = citas.some(c => {
+      if (c.estado === 'cancelado' || c.fecha_cita !== fechaSeleccionadaStr) return false;
+      if (citaExistenteId && c.id === citaExistenteId) return false; // Ignorar la misma cita al editar
+
+      const cIniMin = aMinutos(c.hora_inicio);
+      const cFinMin = aMinutos(c.hora_fin);
+
+      return nuevoIniMin < cFinMin && nuevoFinMin > cIniMin;
+    });
+
+    if (haySolape) {
+      setMensaje('⚠️ Error: Ya existe una cita agendada en este mismo horario. Evita cruces.');
+      return;
+    }
 
     try {
       const payload = {
@@ -153,15 +192,13 @@ export default function Calendario({ usuarioId }) {
       };
 
       if (citaExistenteId) {
-        const { error } = await supabase.from('agd_citas')
-          .update(payload)
-          .eq('id', citaExistenteId);
+        const { error } = await supabase.from('agd_citas').update(payload).eq('id', citaExistenteId);
         if (error) throw error;
-        setMensaje('¡Cita actualizada con éxito!');
+        setMensaje('¡Cita actualizada correctamente!');
       } else {
         const { error } = await supabase.from('agd_citas').insert([payload]);
         if (error) throw error;
-        setMensaje('¡Cita creada con éxito!');
+        setMensaje('¡Cita creada correctamente!');
       }
 
       await cargarDatosSupabase();
@@ -171,7 +208,44 @@ export default function Calendario({ usuarioId }) {
     }
   };
 
-  // Botones independientes de WhatsApp y Correo
+  const eventPropGetter = (event) => {
+    const esGrupal = event.resource.tipo_sesion === 'Grupal';
+    return {
+      style: {
+        backgroundColor: esGrupal ? '#00796B' : '#0288D1',
+        color: '#FFF',
+        borderRadius: '4px',
+        border: 'none',
+        fontWeight: 'bold',
+        fontSize: '0.75rem',
+        padding: '1px 4px'
+      }
+    };
+  };
+
+  // Resaltar horas fuera de la jornada o restringidas en la vista de tiempo
+  const slotPropGetter = (date) => {
+    const horaStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    const anio = date.getFullYear();
+    const mes = String(date.getMonth() + 1).padStart(2, '0');
+    const dia = String(date.getDate()).padStart(2, '0');
+    const fechaStr = `${anio}-${mes}-${dia}`;
+
+    // Verificar si el día entero o la hora está restringida
+    const restDia = restricciones.find(r => r.fecha_especifica?.substring(0, 10) === fechaStr);
+    const bloqueadoDia = restDia?.bloqueado_todo_el_dia;
+
+    if (bloqueadoDia || horaStr < jornadaChair.inicio || horaStr >= jornadaChair.fin) {
+      return {
+        style: {
+          backgroundColor: '#F1F3F5',
+          opacity: 0.7
+        }
+      };
+    }
+    return {};
+  };
+
   const enviarPorWhatsApp = () => {
     const empresObj = empresarios.find(e => e.id === Number(empresarioId));
     if (!empresObj || !empresObj.telefono) {
@@ -196,13 +270,12 @@ export default function Calendario({ usuarioId }) {
   return (
     <div style={estilos.contenedor}>
       <div style={estilos.leyenda}>
-        <span><b style={{color: '#00796B'}}>■</b> Cita Grupal (Verde)</span>
-        <span><b style={{color: '#0288D1'}}>■</b> Cita Individual (Celeste)</span>
-        <span>💡 <i>Haz clic en cualquier espacio libre para agendar una nueva cita.</i></span>
+        <span><b style={{color: '#00796B'}}>■</b> Cita Grupal (Verde Petróleo)</span>
+        <span><b style={{color: '#0288D1'}}>■</b> Cita Individual (Azul Profesional)</span>
+        <span>💡 <i>Haz clic en un día del mes para ver su detalle en la vista Día.</i></span>
       </div>
 
-      {/* Calendario Profesional */}
-      <div style={{ height: 650, backgroundColor: '#FFF', padding: '15px', borderRadius: '8px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+      <div style={estilos.calendarioWrapper}>
         <Calendar
           localizer={localizer}
           events={eventosCalendario}
@@ -210,9 +283,16 @@ export default function Calendario({ usuarioId }) {
           endAccessor="end"
           style={{ height: '100%' }}
           selectable
+          view={vistaActual}
+          onView={(nuevaVista) => setVistaActual(nuevaVista)}
+          date={fechaActualCalendario}
+          onNavigate={(nuevaFecha) => setFechaActualCalendario(nuevaFecha)}
           onSelectSlot={alSeleccionarSlot}
           onSelectEvent={alSeleccionarEvento}
           eventPropGetter={eventPropGetter}
+          slotPropGetter={slotPropGetter}
+          min={new Date(1970, 0, 1, 7, 0, 0)} // Hora mínima visible en grid (07:00)
+          max={new Date(1970, 0, 1, 23, 0, 0)} // Hora máxima visible en grid (23:00)
           messages={{
             next: 'Siguiente',
             previous: 'Anterior',
@@ -224,12 +304,11 @@ export default function Calendario({ usuarioId }) {
             date: 'Fecha',
             time: 'Hora',
             event: 'Evento',
-            noEventsInRange: 'No hay citas en este rango.'
+            noEventsInRange: 'No hay citas registradas en este periodo.'
           }}
         />
       </div>
 
-      {/* Modal de Gestión */}
       {modalAbierto && (
         <div style={estilos.modalOverlay}>
           <div style={estilos.modalContenido}>
@@ -256,7 +335,7 @@ export default function Calendario({ usuarioId }) {
                   onChange={(e) => setTipoSession(e.target.value)}
                   style={estilos.input}
                 >
-                  <option value="Individual">Individual (Celeste)</option>
+                  <option value="Individual">Individual (Azul)</option>
                   <option value="Grupal">Grupal (Verde)</option>
                 </select>
               </div>
@@ -354,6 +433,7 @@ export default function Calendario({ usuarioId }) {
 const estilos = {
   contenedor: { padding: '10px', maxWidth: '100%', width: '100%', boxSizing: 'border-box', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
   leyenda: { display: 'flex', justifyContent: 'center', gap: '15px', fontSize: '0.8rem', marginBottom: '12px', alignItems: 'center', flexWrap: 'wrap' },
+  calendarioWrapper: { height: 680, backgroundColor: '#FFF', padding: '15px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #EAEAEA' },
   
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '15px' },
   modalContenido: { backgroundColor: '#FFF', padding: '20px', borderRadius: '10px', width: '100%', maxWidth: '420px', boxSizing: 'border-box' },
